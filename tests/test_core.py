@@ -131,6 +131,16 @@ class CoreTests(unittest.TestCase):
             self.assertEqual(saved["auth"]["OPENAI_API_KEY"], "secret-key")
             self.assertIn('base_url = "https://example.test/v1"', saved["config"])
 
+    def test_vaults_at_different_paths_are_isolated(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            first = DpapiVault(root / "first" / "profiles.dpapi")
+            second = DpapiVault(root / "second" / "profiles.dpapi")
+            first.save({"provider": {"name": "First"}})
+            second.save({"provider": {"name": "Second"}})
+            self.assertEqual(first.load()["provider"]["name"], "First")
+            self.assertEqual(second.load()["provider"]["name"], "Second")
+
     def test_provider_can_be_edited_and_deleted(self):
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp)

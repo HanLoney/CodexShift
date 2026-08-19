@@ -5,6 +5,7 @@ import ctypes
 from ctypes import wintypes
 import datetime as dt
 import getpass
+import hashlib
 import json
 import locale
 import os
@@ -514,6 +515,10 @@ class DpapiVault:
     def __init__(self, path: Path):
         self.path = path
 
+    def _keychain_account(self) -> str:
+        vault_id = hashlib.sha256(str(self.path.resolve()).encode("utf-8")).hexdigest()[:20]
+        return f"{getpass.getuser()}:{vault_id}"
+
     @staticmethod
     def _crypt(data: bytes, protect: bool) -> bytes:
         if os.name != "nt":
@@ -544,7 +549,7 @@ class DpapiVault:
     def load(self) -> dict:
         if IS_MACOS:
             try:
-                account = f"{getpass.getuser()}:{self.path.name}"
+                account = self._keychain_account()
                 result = subprocess.run(
                     ["security", "find-generic-password", "-s", APP_NAME, "-a", account, "-w"],
                     capture_output=True, text=True, check=True,
@@ -562,7 +567,7 @@ class DpapiVault:
     def save(self, value: dict) -> None:
         raw = json.dumps(value, ensure_ascii=False).encode("utf-8")
         if IS_MACOS:
-            account = f"{getpass.getuser()}:{self.path.name}"
+            account = self._keychain_account()
             encoded = base64.b64encode(raw).decode("ascii")
             try:
                 subprocess.run(
