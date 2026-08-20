@@ -40,6 +40,8 @@ It cares not only where new requests go, but also whether previous tasks remain 
 - Automatically detect `CODEX_HOME` / `~/.codex`, with an editable path setting.
 - **Historical task index synchronization (the core feature):** scan rollout files, normalize their `model_provider` values, update `state_5.sqlite`, and restore missing root task indexes so historical sessions remain visible and openable after a switch.
 - Repair historical indexes independently, without changing the active Provider.
+- **Cross-Harness project and session migration**: choose a project, multi-select sessions, and move selected content between Codex and DeepSeek Harness. Codex → DSH restores user and assistant turns as native messages instead of one Markdown archive, without invoking a model or consuming tokens.
+- Migration shows live percentage, current-item status, and a scrollable execution log while work runs in the background.
 - Automatic backups and rollback on failure; the latest three backups are retained by default.
 - Simplified Chinese, English, Japanese, and Korean UI.
 - Per-user secret protection using Windows DPAPI or macOS Keychain.
@@ -50,10 +52,21 @@ Download the appropriate file from [Releases](https://github.com/HanLoney/CodexS
 
 | Platform | File |
 | --- | --- |
-| Windows 10/11 x64 | `CodexShift-v1.7.0-Windows-x64.exe` |
-| macOS | `CodexShift-v1.7.0-macOS-Universal.zip` |
+| Windows 10/11 x64 | `CodexShift-v1.8.0-Windows-x64.exe` |
+| macOS | `CodexShift-v1.8.0-macOS-Universal.zip` |
 
 Open CodexShift, verify the detected Codex Home, choose or create a Provider, optionally test its API, then click the switch button. CodexShift backs up the data and synchronizes historical task indexes as part of the switch. Codex must close during the operation. Backups are stored in `~/.codex/switcher_backups`.
+
+### Bidirectional Codex ↔ DeepSeek Harness migration
+
+Open “Migrate projects & sessions”, choose a source and the DeepSeek Harness URL (default `http://127.0.0.1:3080`), select one project, multi-select the sessions to move, then preview or import the selected items.
+
+- Codex → DeepSeek Harness creates or reuses the matching Workspace and creates one new Session per selected conversation.
+- DeepSeek Harness → Codex converts selected sessions into indexable Codex rollouts and rebuilds `state_5.sqlite`.
+- “Compact context” imports recent messages individually, “Complete chat history” restores as much user/assistant history as possible as native messages, and “Projects only” creates only the project entry. Neither message mode invokes a model.
+- CodexShift closes Codex automatically before importing, backs up the database, rolls back newly created rollouts on failure, and reopens Codex afterward.
+
+Migration restores visible messages and project membership, but not model KV cache, live shell state, in-progress tool calls, approval state, or other Harness-internal runtime state. DeepSeek Harness APIs and local session formats may change while it remains in developer preview.
 
 ### What happens to history
 

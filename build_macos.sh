@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT"
 
-VERSION="1.7.0"
+VERSION="1.8.0"
 TMP_DIR="$(mktemp -d)"
 ICONSET="$TMP_DIR/CodexShift.iconset"
 ICNS="$TMP_DIR/CodexShift.icns"

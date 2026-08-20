@@ -46,6 +46,8 @@ CodexShift 的核心流程是：
 - 自动识别当前用户的 `CODEX_HOME` / `~/.codex`，也支持手动选择路径。
 - **历史任务索引同步（核心特性）**：扫描 rollout 文件，统一其中的 `model_provider`，更新 `state_5.sqlite`，并补齐遗漏的根任务索引，让历史会话在切换后继续可见、可打开。
 - 提供独立的“修复历史索引”操作，可在不切换 Provider 时单独重建索引。
+- **跨 Harness 项目与会话迁移**：可在 Codex 与 DeepSeek Harness 之间选择项目，再按会话多选导入；Codex → DSH 会把用户与助手消息逐条还原成原生会话，不会把整段历史塞成一条 Markdown，也不会触发模型回答或产生额外用量。
+- 迁移时显示实时进度、当前处理项和可滚动运行日志，耗时操作在后台执行，界面不会假死。
 - 切换前自动备份，失败时自动回滚；默认保留最近 3 份备份。
 - 简体中文、English、日本語、한국어界面与提示。
 - Windows 使用 DPAPI、macOS 使用 Keychain 加密本地 Provider 凭据。
@@ -56,13 +58,24 @@ CodexShift 的核心流程是：
 
 | 系统 | 文件 |
 | --- | --- |
-| Windows 10/11 x64 | `CodexShift-v1.7.0-Windows-x64.exe` |
-| macOS | `CodexShift-v1.7.0-macOS-Universal.zip` |
+| Windows 10/11 x64 | `CodexShift-v1.8.0-Windows-x64.exe` |
+| macOS | `CodexShift-v1.8.0-macOS-Universal.zip` |
 
 1. 打开 CodexShift，确认顶部显示的 Codex Home 路径正确。
 2. 选择内置官方账号，或新建一个第三方 API 配置。
 3. 可先点击“检测 API”，确认接口、密钥和模型可用。
 4. 选择目标 Provider，点击“切换到选中 Provider”；应用会自动备份并同步历史任务索引。
+
+### Codex 与 DeepSeek Harness 双向迁移
+
+点击主界面的“迁移项目与会话”，选择来源和 DeepSeek Harness 地址（默认 `http://127.0.0.1:3080`），先选一个项目，再在右侧多选需要迁移的会话，最后点击“预览”或“导入选中项”。
+
+- Codex → DeepSeek Harness：自动创建/复用对应 Workspace，并为每个选中会话创建新 Session。
+- DeepSeek Harness → Codex：把选中的会话转换为 Codex 可索引的 rollout，并自动重建 `state_5.sqlite` 索引。
+- “精简上下文”逐条导入最近消息；“完整聊天记录”逐条恢复尽可能完整的用户/助手历史；两种模式都不会调用模型。“只建立项目”仅创建项目入口。
+- 导入到 Codex 时会自动关闭 Codex，写入前备份数据库；冲突或失败会删除本次新建 rollout 并恢复备份，完成后自动重新打开 Codex。
+
+迁移会恢复可见聊天消息和项目归属，但不会恢复模型 KV Cache、实时 Shell、工具调用现场、审批状态或其他 Harness 内部运行状态；DeepSeek Harness 的接口与本地会话格式仍可能随其 developer preview 版本变化。
 
 切换时 Codex 需要退出。建议保留“自动关闭 Codex”和“完成后重新打开”。备份目录位于 `~/.codex/switcher_backups`。
 
