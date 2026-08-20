@@ -8,6 +8,7 @@ import getpass
 import hashlib
 import json
 import locale
+import ntpath
 import os
 from pathlib import Path
 import re
@@ -969,7 +970,7 @@ def register_codex_imports(
         if not found:
             found = f"local-{hashlib.sha256(key.encode('utf-8')).hexdigest()[:32]}"
             local_projects[found] = {
-                "id": found, "name": project.name or Path(path).name or path,
+                "id": found, "name": project.name or _project_basename(path),
                 "rootPaths": [path], "createdAt": int(time.time() * 1000),
                 "updatedAt": int(time.time() * 1000),
             }
@@ -989,7 +990,7 @@ def register_codex_imports(
                 project_id = str(saved.get("id") or project_id)
             else:
                 local_projects[project_id] = {
-                    "id": project_id, "name": Path(path).name or path,
+                    "id": project_id, "name": _project_basename(path),
                     "rootPaths": [path], "createdAt": int(time.time() * 1000),
                     "updatedAt": int(time.time() * 1000),
                 }
@@ -1055,7 +1056,7 @@ def repair_dsh_import_visibility(codex_home: Path, backup: Backup | None = None)
         title = _rollout_title(path, meta)
         imports.append((thread_id, title, project_path))
         key = _canonical_project_path(project_path)
-        projects.setdefault(key, MigrationProject(f"repair:{key}", Path(project_path).name or project_path, project_path, "codex", 0))
+        projects.setdefault(key, MigrationProject(f"repair:{key}", _project_basename(project_path), project_path, "codex", 0))
         _rewrite_rollout_source(path, "vscode", backup)
         if not _rollout_has_visible_events(path):
             messages: list[tuple[str, str]] = []
@@ -1206,6 +1207,8 @@ def _canonical_project_path(value: str) -> str:
     raw = str(value or "").strip()
     if raw.startswith("\\\\?\\"):
         raw = raw[4:]
+    if re.match(r"^[A-Za-z]:[\\/]", raw) or raw.startswith("\\\\"):
+        return ntpath.normcase(ntpath.normpath(raw.replace("/", "\\")))
     try:
         return os.path.normcase(os.path.normpath(str(Path(raw).expanduser().resolve(strict=False))))
     except OSError:
@@ -1216,10 +1219,20 @@ def _display_project_path(value: str) -> str:
     raw = str(value or "").strip()
     if raw.startswith("\\\\?\\"):
         raw = raw[4:]
+    if re.match(r"^[A-Za-z]:[\\/]", raw) or raw.startswith("\\\\"):
+        return ntpath.normpath(raw.replace("/", "\\"))
     try:
         return os.path.normpath(str(Path(raw).expanduser().resolve(strict=False)))
     except OSError:
         return os.path.normpath(raw)
+
+
+def _project_basename(value: str) -> str:
+    """Return a useful folder name for native and foreign-platform paths."""
+    raw = _display_project_path(value).rstrip("\\/")
+    if re.match(r"^[A-Za-z]:[\\/]", raw) or "\\" in raw:
+        return ntpath.basename(raw) or raw
+    return Path(raw).name or raw
 
 
 def _rollout_meta(path: Path) -> dict | None:
@@ -1477,7 +1490,7 @@ def scan_codex_migration(codex_home: Path) -> tuple[list[MigrationProject], dict
             migration_id = f"codex-project:{project_id}"
             by_project[migration_id] = normalized_sessions
             projects.append(MigrationProject(
-                migration_id, str(saved.get("name") or Path(root).name or root), root,
+                migration_id, str(saved.get("name") or _project_basename(root)), root,
                 "codex", len(normalized_sessions), updated_at=normalized_sessions[0].updated_at,
             ))
         if recent:
@@ -1498,7 +1511,7 @@ def scan_codex_migration(codex_home: Path) -> tuple[list[MigrationProject], dict
         ordered = sorted(sessions, key=lambda item: item.updated_at, reverse=True)
         by_project[project_id] = ordered
         projects.append(MigrationProject(
-            project_id, Path(path).name or path, path, "codex", len(ordered),
+            project_id, _project_basename(path), path, "codex", len(ordered),
             updated_at=max((item.updated_at for item in ordered), default=0),
         ))
     projects.sort(key=lambda item: (-item.updated_at, item.name.casefold()))
@@ -1559,7 +1572,7 @@ class DeepSeekHarnessClient:
             workspace_id = str(item.get("workspaceId") or "")
             session_ids = item.get("sessionIds") or []
             project_id = _migration_project_id("dsh", path)
-            projects.append(MigrationProject(project_id, str(item.get("title") or Path(path).name or path), path, "dsh", len(session_ids), workspace_id))
+            projects.append(MigrationProject(project_id, str(item.get("title") or _project_basename(path)), path, "dsh", len(session_ids), workspace_id))
         return sorted(projects, key=lambda item: item.name.casefold())
 
     def list_sessions(self) -> tuple[list[MigrationProject], dict[str, list[MigrationSession]]]:

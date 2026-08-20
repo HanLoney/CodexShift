@@ -19,6 +19,7 @@ All notable changes to CodexShift are documented here.
 - DSH → Codex imports now close running Codex processes automatically and reopen Codex after both successful imports and rolled-back failures.
 - Added a responsive migration progress panel with percentage, per-item status, and a scrollable live log; imports now run in the background so the UI stays responsive.
 - Kept Preview, Import, and Cancel actions permanently visible at compact window heights.
+- Fixed Windows project-path normalization and folder-name extraction when tests or migrations run on macOS.
 
 ## 1.7.0
 
