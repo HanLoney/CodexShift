@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <strong>Safely switch between a native Codex account and third-party APIs, with automatic history reindexing.</strong>
+  <strong>A Provider switcher and Codex historical task index repair tool</strong>
 </p>
 
 <p align="center">
@@ -14,10 +14,22 @@
   <a href="https://github.com/HanLoney/CodexShift/issues">Report an issue</a>
 </p>
 
-CodexShift is an independent desktop application. It does not depend on, read data from, or modify any other Provider switching tool.
+CodexShift is an independent Codex data migration and index maintenance tool. When you switch between the native account and a third-party API, it also synchronizes Provider references in historical tasks so old sessions do not become orphaned, duplicated, or disappear from the history list. It does not depend on, read data from, or modify any other Provider switching tool.
 
 > [!IMPORTANT]
 > CodexShift is a community project. It is not an official OpenAI product and is not affiliated with or endorsed by OpenAI.
+
+## Why CodexShift
+
+Many tools can replace an API endpoint. Codex history also depends on Provider values in rollout files and task indexes in `state_5.sqlite`. Replacing only the configuration can leave old sessions missing, duplicated, or impossible to reopen.
+
+CodexShift's core flow is:
+
+```text
+Switch Provider → Back up Codex data → Sync historical task Providers → Repair root indexes → Finish
+```
+
+It cares not only where new requests go, but also whether previous tasks remain discoverable, openable, and usable.
 
 ## Features
 
@@ -26,7 +38,8 @@ CodexShift is an independent desktop application. It does not depend on, read da
 - Test API connectivity and credentials, and discover models from OpenAI-compatible `/models` endpoints.
 - Switch configuration and authentication data while removing conflicting account fields.
 - Automatically detect `CODEX_HOME` / `~/.codex`, with an editable path setting.
-- Synchronize rollout files and `state_5.sqlite`, including missing root task indexes.
+- **Historical task index synchronization (the core feature):** scan rollout files, normalize their `model_provider` values, update `state_5.sqlite`, and restore missing root task indexes so historical sessions remain visible and openable after a switch.
+- Repair historical indexes independently, without changing the active Provider.
 - Automatic backups and rollback on failure; the latest three backups are retained by default.
 - Simplified Chinese, English, Japanese, and Korean UI.
 - Per-user secret protection using Windows DPAPI or macOS Keychain.
@@ -40,7 +53,11 @@ Download the appropriate file from [Releases](https://github.com/HanLoney/CodexS
 | Windows 10/11 x64 | `CodexShift-v1.7.0-Windows-x64.exe` |
 | macOS | `CodexShift-v1.7.0-macOS-Universal.zip` |
 
-Open CodexShift, verify the detected Codex Home, choose or create a Provider, optionally test its API, then click the switch button. Codex must close during the operation. Backups are stored in `~/.codex/switcher_backups`.
+Open CodexShift, verify the detected Codex Home, choose or create a Provider, optionally test its API, then click the switch button. CodexShift backs up the data and synchronizes historical task indexes as part of the switch. Codex must close during the operation. Backups are stored in `~/.codex/switcher_backups`.
+
+### What happens to history
+
+During a switch, CodexShift updates Provider references in rollout history files and repairs the task-discovery records and root thread entries in `state_5.sqlite`. Every change is backed up first; failed synchronization or database validation triggers an automatic rollback.
 
 Unsigned Windows builds may trigger SmartScreen. The macOS build is ad-hoc signed; on first launch, right-click the app in Finder and choose **Open**.
 
