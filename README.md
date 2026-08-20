@@ -5,8 +5,8 @@
 </p>
 
 <p align="center">
-  <strong>Codex ↔ DeepSeek Harness 项目、会话与聊天记录双向迁移</strong><br>
-  <sub>同时提供 Provider 切换与 Codex 历史任务索引修复</sub>
+  <strong>Provider 切换 + Codex 历史任务索引修复</strong><br>
+  <sub>让官方账号、第三方 API 与历史任务一起安全切换</sub>
 </p>
 
 <p align="center">
@@ -21,7 +21,9 @@
   <a href="LICENSE"><img src="https://img.shields.io/github/license/HanLoney/CodexShift" alt="License"></a>
 </p>
 
-CodexShift 是一个独立的 AI 编程会话迁移与 Codex 索引维护工具。它可以在 **Codex 与 DeepSeek Harness 之间按项目、按会话选择性双向迁移聊天记录**，自动建立对应项目并恢复可见的用户/助手上下文；同时支持官方账号与第三方 API 切换，并同步修复 Codex 历史任务索引。
+CodexShift 是一个独立的 **Provider 切换与 Codex 历史任务索引修复工具**。切换官方账号或第三方 API 时，它会同步历史任务中的 Provider 引用、修复 `state_5.sqlite` 根任务索引，让旧会话在切换后继续可见、可打开，而不是只替换 API 地址。
+
+此外，它还支持在 **Codex 与 DeepSeek Harness 之间按项目、按会话选择性双向迁移聊天记录**，自动建立对应项目并恢复可见的用户/助手上下文。
 
 ```text
 Codex 项目 / 独立会话 / 聊天记录  ⇄  DeepSeek Harness Workspace / Session / 聊天记录
@@ -34,10 +36,6 @@ Codex 项目 / 独立会话 / 聊天记录  ⇄  DeepSeek Harness Workspace / Se
 
 ## 为什么是 CodexShift
 
-### 把项目和上下文带到另一套 Harness
-
-普通 API 切换工具只解决“下一次请求发到哪里”。CodexShift 还能把已经积累的项目、会话和可见聊天上下文在 Codex 与 DeepSeek Harness 之间双向迁移，并保持项目归属，方便继续工作而不是从空白会话重新开始。
-
 很多工具都能替换 API 地址，但 Codex 的历史任务还依赖 rollout 文件和 `state_5.sqlite` 中的 Provider 及根任务索引。只替换配置，可能导致历史会话显示异常，甚至无法继续打开。
 
 CodexShift 的核心流程是：
@@ -47,6 +45,10 @@ CodexShift 的核心流程是：
 ```
 
 因此它关注的不只是“请求发到哪里”，还关注“以前的任务能不能继续找到、打开和使用”。
+
+### 扩展能力：把项目和上下文带到另一套 Harness
+
+除了 Provider 切换与历史索引修复，CodexShift 还能把已经积累的项目、会话和可见聊天上下文在 Codex 与 DeepSeek Harness 之间双向迁移，并保持项目归属，方便继续工作而不是从空白会话重新开始。
 
 ## 功能
 
