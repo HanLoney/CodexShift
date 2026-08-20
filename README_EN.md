@@ -5,7 +5,8 @@
 </p>
 
 <p align="center">
-  <strong>A Provider switcher and Codex historical task index repair tool</strong>
+  <strong>Bidirectional Codex ↔ DeepSeek Harness project, session, and chat-history migration</strong><br>
+  <sub>Plus Provider switching and Codex historical task index repair</sub>
 </p>
 
 <p align="center">
@@ -14,12 +15,22 @@
   <a href="https://github.com/HanLoney/CodexShift/issues">Report an issue</a>
 </p>
 
-CodexShift is an independent Codex data migration and index maintenance tool. When you switch between the native account and a third-party API, it also synchronizes Provider references in historical tasks so old sessions do not become orphaned, duplicated, or disappear from the history list. It does not depend on, read data from, or modify any other Provider switching tool.
+CodexShift is an independent AI coding-session migration and Codex index maintenance tool. It can **selectively move projects, sessions, and visible chat history in both directions between Codex and DeepSeek Harness**, create matching project entries, and restore user/assistant context. It also switches between the native account and third-party APIs while repairing Codex historical task indexes.
+
+```text
+Codex projects / standalone sessions / chat history  ⇄  DeepSeek Harness workspaces / sessions / chat history
+```
+
+Migration is selective rather than all-or-nothing: choose individual projects and multiple sessions, then import compact context or complete chat history. Neither direction invokes a model or consumes additional API tokens.
 
 > [!IMPORTANT]
 > CodexShift is a community project. It is not an official OpenAI product and is not affiliated with or endorsed by OpenAI.
 
 ## Why CodexShift
+
+### Carry projects and context across Harnesses
+
+Typical API switchers only decide where the next request goes. CodexShift also moves accumulated projects, sessions, and visible conversation context between Codex and DeepSeek Harness while preserving project membership, so work can continue without starting from an empty chat.
 
 Many tools can replace an API endpoint. Codex history also depends on Provider values in rollout files and task indexes in `state_5.sqlite`. Replacing only the configuration can leave old sessions missing, duplicated, or impossible to reopen.
 
@@ -40,7 +51,7 @@ It cares not only where new requests go, but also whether previous tasks remain 
 - Automatically detect `CODEX_HOME` / `~/.codex`, with an editable path setting.
 - **Historical task index synchronization (the core feature):** scan rollout files, normalize their `model_provider` values, update `state_5.sqlite`, and restore missing root task indexes so historical sessions remain visible and openable after a switch.
 - Repair historical indexes independently, without changing the active Provider.
-- **Cross-Harness project and session migration**: choose a project, multi-select sessions, and move selected content between Codex and DeepSeek Harness. Codex → DSH restores user and assistant turns as native messages instead of one Markdown archive, without invoking a model or consuming tokens.
+- **Bidirectional Codex ↔ DeepSeek Harness history migration (core feature):** browse projects and standalone sessions separately, multi-select specific conversations, create or reuse matching projects, and restore user/assistant messages and visible context without importing everything at once.
 - Migration shows live percentage, current-item status, and a scrollable execution log while work runs in the background.
 - Automatic backups and rollback on failure; the latest three backups are retained by default.
 - Simplified Chinese, English, Japanese, and Korean UI.
