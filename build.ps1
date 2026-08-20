@@ -5,7 +5,7 @@ Set-Location -LiteralPath $root
 python -m unittest discover -s tests -v
 if ($LASTEXITCODE -ne 0) { throw "Tests failed with exit code $LASTEXITCODE" }
 python -m PyInstaller --noconfirm --clean --onefile --windowed `
-  --name 'CodexShift-v1.8.0-Windows-x64' `
+  --name 'CodexShift-v1.8.1-Windows-x64' `
   --icon 'assets\codexshift.ico' `
   --add-data 'assets\codexshift-logo.png;assets' `
   --add-data 'assets\codexshift.ico;assets' `
@@ -13,4 +13,4 @@ python -m PyInstaller --noconfirm --clean --onefile --windowed `
   'codex_switcher.py'
 if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed with exit code $LASTEXITCODE" }
 
-Write-Host "`nBuild complete: $root\dist\CodexShift-v1.8.0-Windows-x64.exe"
+Write-Host "`nBuild complete: $root\dist\CodexShift-v1.8.1-Windows-x64.exe"

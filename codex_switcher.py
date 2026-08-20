@@ -33,7 +33,7 @@ from tkinter import filedialog, ttk
 
 
 APP_NAME = "CodexShift"
-APP_VERSION = "1.8.0"
+APP_VERSION = "1.8.1"
 OFFICIAL_PROVIDER = "openai"
 BUILTIN_OFFICIAL_ID = "codexshift-native-official"
 PROCESS_NAMES = ("ChatGPT.exe", "codex.exe", "codex-code-mode-host.exe")
@@ -558,6 +558,15 @@ def provider_signature(config_text: str, auth: dict) -> tuple[str, str, str, str
         )
     except (TypeError, tomllib.TOMLDecodeError):
         return None
+
+
+def provider_identity(config_text: str, auth: dict) -> tuple[str, str, str] | None:
+    """Identify one API account independently of its currently selected model."""
+    signature = provider_signature(config_text, auth)
+    if signature is None:
+        return None
+    provider, base_url, _model, api_key = signature
+    return provider.casefold(), base_url.rstrip("/").casefold(), api_key
 
 
 def normalize_auth(auth: dict, target_provider: str) -> dict:
@@ -2783,6 +2792,8 @@ class SwitchEngine:
 
     def providers(self) -> list[Provider]:
         vault = self.vault.load()
+        if self._dedupe_imported_profiles(vault):
+            self.vault.save(vault)
         vault = self._import_live_api_profile(vault)
         providers: list[Provider] = []
         for provider_id, saved in vault.items():
@@ -2794,11 +2805,11 @@ class SwitchEngine:
             if auth.get("auth_mode") == "chatgpt":
                 continue
             config = str(saved["config"])
-            fallback = str(saved.get("name") or provider_id)
+            saved_name = str(saved.get("name") or "").strip()
             providers.append(
                 Provider(
                     id=str(provider_id),
-                    name=provider_name_from_config(config, fallback),
+                    name=saved_name or provider_name_from_config(config, str(provider_id)),
                     config=config,
                     auth=auth,
                     source=tr("source_local"),
@@ -2810,6 +2821,41 @@ class SwitchEngine:
         for provider in providers:
             provider.is_current = provider.id == current_id
         return providers
+
+    @staticmethod
+    def _dedupe_imported_profiles(vault: dict) -> bool:
+        """Remove obsolete automatic snapshots without touching user profiles."""
+        user_identities: set[tuple[str, str, str]] = set()
+        for saved in vault.values():
+            if not isinstance(saved, dict) or saved.get("imported_from_current"):
+                continue
+            config = saved.get("config")
+            auth = saved.get("auth")
+            if isinstance(config, str) and isinstance(auth, dict):
+                identity = provider_identity(config, auth)
+                if identity is not None:
+                    user_identities.add(identity)
+
+        changed = False
+        latest_imported: dict[tuple[str, str, str], str] = {}
+        for provider_id, saved in list(vault.items()):
+            if not isinstance(saved, dict) or not saved.get("imported_from_current"):
+                continue
+            config = saved.get("config")
+            auth = saved.get("auth")
+            identity = provider_identity(config, auth) if isinstance(config, str) and isinstance(auth, dict) else None
+            if identity is None:
+                continue
+            if identity in user_identities:
+                del vault[provider_id]
+                changed = True
+                continue
+            previous_id = latest_imported.get(identity)
+            if previous_id and previous_id in vault:
+                del vault[previous_id]
+                changed = True
+            latest_imported[identity] = str(provider_id)
+        return changed
 
     def _import_live_api_profile(self, vault: dict) -> dict:
         config_path = self.codex_home / "config.toml"
@@ -2834,8 +2880,24 @@ class SwitchEngine:
                 if provider_signature(saved_config, saved_auth) == live_signature:
                     return vault
         preferred_id = str(self.state().get("active_provider_id") or "")
-        if not preferred_id or preferred_id == BUILTIN_OFFICIAL_ID or preferred_id in vault:
-            preferred_id = f"imported-{uuid.uuid4()}"
+        live_identity = provider_identity(config, auth)
+        active_saved = vault.get(preferred_id)
+        if (
+            preferred_id and preferred_id != BUILTIN_OFFICIAL_ID
+            and isinstance(active_saved, dict) and not active_saved.get("imported_from_current")
+            and isinstance(active_saved.get("config"), str) and isinstance(active_saved.get("auth"), dict)
+            and provider_identity(active_saved["config"], active_saved["auth"]) == live_identity
+        ):
+            active_saved["config"] = config
+            active_saved["auth"] = auth
+            vault[preferred_id] = active_saved
+            self.vault.save(vault)
+            return vault
+        if live_identity is not None:
+            identity_text = "\0".join(live_identity)
+            preferred_id = f"imported-{hashlib.sha256(identity_text.encode('utf-8')).hexdigest()[:20]}"
+        else:
+            preferred_id = "imported-current"
         name = provider_name_from_config(config, "当前 Codex 配置")
         vault[preferred_id] = {
             "name": name,
@@ -3524,13 +3586,18 @@ class App(tk.Tk):
         self.edit_button.pack(side="right", padx=(8, 0))
 
         columns = ("name", "kind", "model", "source", "current")
-        self.tree = ttk.Treeview(provider_card, columns=columns, show="headings", height=5, selectmode="browse")
+        tree_holder = ttk.Frame(provider_card, style="Card.TFrame")
+        tree_holder.pack(fill="x")
+        self.tree = ttk.Treeview(tree_holder, columns=columns, show="headings", height=5, selectmode="browse")
+        tree_scroll = ttk.Scrollbar(tree_holder, orient="vertical", command=self.tree.yview)
+        self.tree.configure(yscrollcommand=tree_scroll.set)
         headings = {"name": "PROVIDER", "kind": tr("type"), "model": tr("model"), "source": tr("source"), "current": tr("status")}
         widths = {"name": 250, "kind": 125, "model": 170, "source": 120, "current": 90}
         for key in columns:
             self.tree.heading(key, text=headings[key])
             self.tree.column(key, width=widths[key], anchor="w" if key in ("name", "model") else "center")
-        self.tree.pack(fill="x")
+        self.tree.pack(side="left", fill="x", expand=True)
+        tree_scroll.pack(side="right", fill="y")
         self.tree.bind("<<TreeviewSelect>>", lambda _event: self.update_provider_actions())
         self.tree.bind("<Double-1>", lambda _event: self.edit_selected())
         self.tree.tag_configure("current", background="#f3f1ff", foreground="#302878")
@@ -3618,6 +3685,7 @@ class App(tk.Tk):
     def refresh(self, select_id: str | None = None) -> None:
         try:
             self.providers_cache = self.engine.providers()
+            self.tree.configure(height=min(7, max(5, len(self.providers_cache))))
             self.tree.delete(*self.tree.get_children())
             selected = None
             for provider in self.providers_cache:

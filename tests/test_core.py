@@ -205,6 +205,7 @@ class CoreTests(unittest.TestCase):
             home = Path(tmp)
             engine = SwitchEngine(home, lambda _message: None)
             engine.vault = DpapiVault(home / "profiles.dpapi")
+            engine.state_path = home / "settings.json"
             provider = engine.add_custom_provider("Old", "https://old.test/v1", "key-1", "model-a")
             updated = engine.save_custom_provider(
                 provider, "New", "https://new.test/v1", "", "model-b"
@@ -237,6 +238,42 @@ class CoreTests(unittest.TestCase):
             saved = engine.vault.load()
             self.assertEqual(len(saved), 1)
             self.assertTrue(next(iter(saved.values()))["imported_from_current"])
+
+    def test_live_profile_updates_active_user_profile_and_removes_auto_duplicates(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            engine = SwitchEngine(home, lambda _message: None)
+            engine.vault = DpapiVault(home / "profiles.dpapi")
+            engine.state_path = home / "settings.json"
+            user = engine.add_custom_provider(
+                "My named API", "https://same.test/v1", "shared-key", "model-a"
+            )
+            live_config = codex_switcher.custom_provider_config(
+                "", "custom", "https://same.test/v1", "model-b"
+            )
+            live_auth = {"OPENAI_API_KEY": "shared-key", "auth_mode": "apikey"}
+            vault = engine.vault.load()
+            for suffix, model in (("old", "model-c"), ("new", "model-d")):
+                vault[f"imported-{suffix}"] = {
+                    "name": "custom",
+                    "config": codex_switcher.custom_provider_config(
+                        "", "custom", "https://same.test/v1", model
+                    ),
+                    "auth": live_auth,
+                    "imported_from_current": True,
+                }
+            engine.vault.save(vault)
+            (home / "config.toml").write_text(live_config, encoding="utf-8")
+            (home / "auth.json").write_text(json.dumps(live_auth), encoding="utf-8")
+            (home / "settings.json").write_text(
+                json.dumps({"active_provider_id": user.id}), encoding="utf-8"
+            )
+
+            providers = engine.providers()
+            saved = engine.vault.load()
+            self.assertEqual([p.name for p in providers if p.id != BUILTIN_OFFICIAL_ID], ["My named API"])
+            self.assertEqual(codex_switcher.provider_model(saved[user.id]["config"]), "model-b")
+            self.assertFalse(any(item.get("imported_from_current") for item in saved.values()))
 
     def test_model_discovery_parses_openai_compatible_response(self):
         class Handler(BaseHTTPRequestHandler):

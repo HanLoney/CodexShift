@@ -1,6 +1,6 @@
-# CodexShift 1.8.0
+# CodexShift 1.8.1
 
-本版本加入 Codex 与 DeepSeek Harness 的双向项目/会话迁移，并重点升级了 Codex → DSH 的历史恢复质量。
+本版本修复 Provider 列表重复配置与官方入口显示问题，并延续 Codex 与 DeepSeek Harness 的双向项目/会话迁移能力。
 
 ## 主要功能
 
@@ -21,11 +21,15 @@
 - 预览、导入和取消按钮固定显示，在较小屏幕或窗口高度下也不会被进度区挤出界面
 - 仅导入项目时不再生成占位会话
 - 继续支持 Provider 切换、API 检测和 Codex 历史任务索引修复
+- 修复当前 Codex 模型变化时反复生成多个 `custom` 自动配置的问题
+- 当前 API 会更新匹配的用户配置，不再重复创建快照
+- 保留用户自己设置的 Provider 名称，不再被 TOML 中的 `custom` 覆盖
+- Provider 列表增加滚动条，切回官方后官方账号入口不会被隐藏
 
 ## 下载
 
-- Windows：`CodexShift-v1.8.0-Windows-x64.exe`
-- macOS：`CodexShift-v1.8.0-macOS-Universal.zip`
+- Windows：`CodexShift-v1.8.1-Windows-x64.exe`
+- macOS：`CodexShift-v1.8.1-macOS-Universal.zip`
 
 Windows 和 macOS 应用当前均未使用商业开发者证书签名，首次启动时系统可能显示安全提示。请只从本仓库的 Releases 页面下载。
 

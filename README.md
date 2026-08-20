@@ -71,8 +71,8 @@ CodexShift 的核心流程是：
 
 | 系统 | 文件 |
 | --- | --- |
-| Windows 10/11 x64 | `CodexShift-v1.8.0-Windows-x64.exe` |
-| macOS | `CodexShift-v1.8.0-macOS-Universal.zip` |
+| Windows 10/11 x64 | `CodexShift-v1.8.1-Windows-x64.exe` |
+| macOS | `CodexShift-v1.8.1-macOS-Universal.zip` |
 
 1. 打开 CodexShift，确认顶部显示的 Codex Home 路径正确。
 2. 选择内置官方账号，或新建一个第三方 API 配置。

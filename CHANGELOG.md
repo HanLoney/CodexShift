@@ -2,6 +2,13 @@
 
 All notable changes to CodexShift are documented here.
 
+## 1.8.1
+
+- Fixed repeated automatic snapshots creating extra `custom` Provider profiles when the live model changed.
+- Live API settings now update the matching user-created profile instead of creating a duplicate snapshot.
+- Preserved user-defined Provider names instead of replacing them with the TOML table name `custom`.
+- Expanded the Provider list and added a scrollbar so the built-in official account remains visible alongside saved profiles.
+
 ## 1.8.0
 
 - Added bidirectional, project-scoped and session-scoped migration between Codex and DeepSeek Harness.

@@ -65,8 +65,8 @@ Download the appropriate file from [Releases](https://github.com/HanLoney/CodexS
 
 | Platform | File |
 | --- | --- |
-| Windows 10/11 x64 | `CodexShift-v1.8.0-Windows-x64.exe` |
-| macOS | `CodexShift-v1.8.0-macOS-Universal.zip` |
+| Windows 10/11 x64 | `CodexShift-v1.8.1-Windows-x64.exe` |
+| macOS | `CodexShift-v1.8.1-macOS-Universal.zip` |
 
 Open CodexShift, verify the detected Codex Home, choose or create a Provider, optionally test its API, then click the switch button. CodexShift backs up the data and synchronizes historical task indexes as part of the switch. Codex must close during the operation. Backups are stored in `~/.codex/switcher_backups`.
 
