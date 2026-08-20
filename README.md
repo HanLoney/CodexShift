@@ -21,9 +21,11 @@
   <a href="LICENSE"><img src="https://img.shields.io/github/license/HanLoney/CodexShift" alt="License"></a>
 </p>
 
-CodexShift 是一个独立的 **Provider 切换与 Codex 历史任务索引修复工具**。切换官方账号或第三方 API 时，它会同步历史任务中的 Provider 引用、修复 `state_5.sqlite` 根任务索引，让旧会话在切换后继续可见、可打开，而不是只替换 API 地址。
+CodexShift 是一款独立的 **Codex Provider 切换与历史任务索引维护工具**。
 
-此外，它还支持在 **Codex 与 DeepSeek Harness 之间按项目、按会话选择性双向迁移聊天记录**，自动建立对应项目并恢复可见的用户/助手上下文。
+它不只是修改 API 地址：在官方账号与第三方 API 之间切换时，CodexShift 会同步处理配置、认证凭据和历史任务中的 Provider 引用，并修复 `state_5.sqlite` 中缺失或异常的根任务索引，避免旧会话在切换后变成孤立记录、重复显示，或直接从历史列表中消失。
+
+CodexShift 独立保存自己的配置，不依赖其他 Provider 管理工具，也不会读取或修改其他工具的数据。除此之外，它还支持在 **Codex 与 DeepSeek Harness 之间按项目、按会话选择性双向迁移聊天记录**，自动建立对应项目并恢复可见的用户/助手上下文。
 
 ```text
 Codex 项目 / 独立会话 / 聊天记录  ⇄  DeepSeek Harness Workspace / Session / 聊天记录
@@ -52,18 +54,18 @@ CodexShift 的核心流程是：
 
 ## 功能
 
-- 内置“OpenAI 官方账号（原生）”入口，可恢复已保存的官方登录凭据，或回到原生登录流程。
-- 新建、编辑、删除第三方 API 配置。
-- 检测 API Key 与接口连通性，并从 OpenAI 兼容的 `/models` 接口自动发现模型。
-- 切换配置与认证凭据，自动清理冲突的账号字段。
-- 自动识别当前用户的 `CODEX_HOME` / `~/.codex`，也支持手动选择路径。
-- **历史任务索引同步（核心特性）**：扫描 rollout 文件，统一其中的 `model_provider`，更新 `state_5.sqlite`，并补齐遗漏的根任务索引，让历史会话在切换后继续可见、可打开。
-- 提供独立的“修复历史索引”操作，可在不切换 Provider 时单独重建索引。
-- **Codex ↔ DeepSeek Harness 记录双向互导（核心特性）**：按项目和独立会话分区浏览，可多选指定会话迁移；自动创建或复用对应项目，并逐条恢复用户/助手聊天记录与可见上下文，不会把所有历史一次性导完。
-- 迁移时显示实时进度、当前处理项和可滚动运行日志，耗时操作在后台执行，界面不会假死。
-- 切换前自动备份，失败时自动回滚；默认保留最近 3 份备份。
-- 简体中文、English、日本語、한국어界面与提示。
-- Windows 使用 DPAPI、macOS 使用 Keychain 加密本地 Provider 凭据。
+- **原生官方账号切换**：内置“OpenAI 官方账号（原生）”入口，可恢复已保存的官方登录凭据，也可以安全返回 Codex 原生登录流程。
+- **第三方 API 配置管理**：支持新建、编辑和删除配置，并在多套 Provider 之间快速切换。
+- **API 与模型检测**：验证 API Key、接口连通性和 Responses 协议兼容性，并通过 OpenAI 兼容的 `/models` 接口自动发现可用模型。
+- **配置与凭据同步**：切换时同时更新 Codex 配置和认证信息，自动移除互相冲突的官方账号或 API Key 字段。
+- **Codex Home 路径管理**：自动识别当前用户的 `CODEX_HOME` / `~/.codex`，也支持手动指定其他目录。
+- **历史任务索引同步（核心特性）**：扫描 rollout 历史文件，统一 `model_provider` 引用，更新 `state_5.sqlite`，并补齐遗漏的根任务索引，让旧会话在切换后继续可见、可打开。
+- **独立修复历史索引**：无需切换 Provider，也可以单独扫描并重建历史任务索引。
+- **安全备份与自动回滚**：修改前自动备份 Codex 数据，发生错误时恢复原配置与索引；默认保留最近 3 份备份。
+- **Codex ↔ DeepSeek Harness 记录互导**：按项目和独立会话浏览、多选并双向迁移聊天记录，自动创建或复用对应项目，恢复用户/助手可见上下文。
+- **可视化迁移过程**：显示百分比、当前处理项和可滚动实时日志，耗时操作在后台运行，避免界面假死。
+- **多语言与跨平台**：提供简体中文、English、日本語、한국어界面；支持 Windows 和 macOS。
+- **本地凭据保护**：Windows 使用 DPAPI、macOS 使用 Keychain 加密保存 Provider 凭据。
 
 ## 下载与使用
 
