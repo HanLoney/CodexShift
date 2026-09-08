@@ -6,12 +6,14 @@ from ctypes import wintypes
 import datetime as dt
 import getpass
 import hashlib
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import locale
 import ntpath
 import os
 from pathlib import Path
 import re
+import secrets
 import shutil
 import sqlite3
 import subprocess
@@ -33,12 +35,19 @@ from tkinter import filedialog, ttk
 
 
 APP_NAME = "CodexShift"
-APP_VERSION = "1.8.1"
+APP_VERSION = "1.9.0"
 OFFICIAL_PROVIDER = "openai"
 BUILTIN_OFFICIAL_ID = "codexshift-native-official"
+BUILTIN_TOKENDANCE_ID = "codexshift-tokendance"
+TOKENDANCE_PROVIDER = "tokendance"
+TOKENDANCE_BASE_URL = "https://tokendance.space/gateway/v1"
+TOKENDANCE_DEFAULT_MODEL = "deepseek-v4-flash-0731"
+TOKENDANCE_APP_URL = "app://codexshift"
+TOKENDANCE_AUTH_URL = "https://tokendance.space/auth"
+TOKENDANCE_KEY_EXCHANGE_URL = "https://tokendance.space/portal/api/v1/auth/keys"
 PROCESS_NAMES = ("ChatGPT.exe", "codex.exe", "codex-code-mode-host.exe")
 MAC_PROCESS_NAMES = ("Codex", "ChatGPT", "codex", "codex-code-mode-host")
-SECRET_KEYS = {"OPENAI_API_KEY", "access_token", "refresh_token", "id_token"}
+SECRET_KEYS = {"OPENAI_API_KEY", "experimental_bearer_token", "access_token", "refresh_token", "id_token"}
 IS_WINDOWS = os.name == "nt"
 IS_MACOS = sys.platform == "darwin"
 UI_FONT = "PingFang SC" if IS_MACOS else "Microsoft YaHei UI"
@@ -63,9 +72,23 @@ TRANSLATIONS = {
         "verify_on_switch": "Verify third-party API", "auto_close": "Close Codex automatically",
         "restart_after": "Reopen after switching", "switch_selected": "Switch to selected Provider  →",
         "test_api": "✓  Test API", "repair_history": "Repair history index", "open_backups": "Open backups",
+        "tokendance_get_key": "Get Key", "tokendance_connect": "Connect TokenDance",
+        "tokendance_dialog": "Connect TokenDance", "tokendance_save_connect": "Save & connect",
+        "tokendance_hint": "The endpoint is built in. Paste your TokenDance API Key, discover a Responses-compatible model, then connect.",
+        "tokendance_key_required": "Enter a TokenDance API Key, or click Get Key first.",
+        "tokendance_card_desc": "Responses gateway · Compatible model discovery",
+        "tokendance_not_ready": "Not configured · Get a Key to connect", "tokendance_ready": "Ready · {model}",
+        "tokendance_active": "Active · {model}", "tokendance_switch": "Switch", "tokendance_in_use": "In use",
+        "tokendance_oauth_waiting": "TokenDance authorization opened in your browser…",
+        "tokendance_oauth_done": "TokenDance authorization succeeded; the Key is encrypted locally.",
+        "tokendance_oauth_failed": "TokenDance authorization failed: {error}",
         "execution_log": "Execution log", "select_profile": "Select a Provider first.",
         "builtin_official": "OpenAI official account (native)",
         "builtin_login_needed": "OpenAI official account (sign-in required)",
+        "builtin_tokendance": "TokenDance (recommended)", "builtin_tokendance_unconfigured": "TokenDance (recommended · API Key required)",
+        "source_builtin_tokendance": "Built-in · Recommended", "source_tokendance_unconfigured": "Built-in · Configure API Key",
+        "builtin_tokendance_edit_locked": "TokenDance is built in; edit its API Key and model instead of creating a duplicate profile.",
+        "builtin_tokendance_delete_locked": "The built-in TokenDance profile cannot be deleted. Clear its API Key to disable it.",
         "source_saved_login": "Built-in · Login saved", "source_login_needed": "Built-in · Sign-in required",
         "source_local": "Local encrypted profile", "read_profiles": "Loaded {count} local Providers.",
         "validating": "Validating the target API and credentials…", "closing_codex": "Closing Codex to avoid locked databases…",
@@ -96,9 +119,11 @@ TRANSLATIONS = {
         "third_party_api": "サードパーティ API", "current": "●  使用中", "auto": "自動", "unknown": "未認識",
         "loading": "読み込み中…", "detecting": "確認中…", "verify_on_switch": "切替時に API を確認",
         "auto_close": "Codex を自動終了", "restart_after": "完了後に再起動", "switch_selected": "選択した Provider に切替  →",
-        "test_api": "✓  API 確認", "repair_history": "履歴インデックス修復", "open_backups": "バックアップを開く",
+        "test_api": "✓  API 確認", "repair_history": "履歴インデックス修復", "open_backups": "バックアップを開く", "tokendance_get_key": "Key を取得", "tokendance_connect": "TokenDance に接続", "tokendance_dialog": "TokenDance に接続", "tokendance_save_connect": "保存して接続", "tokendance_hint": "接続先は内蔵済みです。API Key を貼り付け、Responses 対応モデルを取得して接続してください。", "tokendance_key_required": "TokenDance API Key を入力するか、先に Key を取得してください。",
+        "tokendance_card_desc": "Responses ゲートウェイ · 対応モデルを自動取得", "tokendance_not_ready": "未設定 · Key を取得して接続", "tokendance_ready": "接続準備完了 · {model}", "tokendance_active": "使用中 · {model}", "tokendance_switch": "切り替える", "tokendance_in_use": "使用中",
+        "tokendance_oauth_waiting": "ブラウザーで TokenDance 認証を開きました。認証を待っています…", "tokendance_oauth_done": "TokenDance 認証に成功し、Key をローカルで暗号化して保存しました。", "tokendance_oauth_failed": "TokenDance 認証失敗：{error}",
         "execution_log": "実行ログ", "select_profile": "Provider を選択してください。", "builtin_official": "OpenAI 公式アカウント（ネイティブ）",
-        "builtin_login_needed": "OpenAI 公式アカウント（再ログイン必要）", "source_saved_login": "内蔵 · ログイン保存済み",
+        "builtin_login_needed": "OpenAI 公式アカウント（再ログイン必要）", "builtin_tokendance": "TokenDance（おすすめ）", "builtin_tokendance_unconfigured": "TokenDance（おすすめ · API Key 必須）", "source_builtin_tokendance": "内蔵 · おすすめ", "source_tokendance_unconfigured": "内蔵 · API Key を設定", "builtin_tokendance_edit_locked": "TokenDance は内蔵設定です。重複作成せず API Key とモデルを編集してください。", "builtin_tokendance_delete_locked": "内蔵 TokenDance は削除できません。無効にするには API Key を空にしてください。", "source_saved_login": "内蔵 · ログイン保存済み",
         "source_login_needed": "内蔵 · ログイン必要", "source_local": "ローカル暗号化設定", "read_profiles": "ローカル Provider を {count} 件読み込みました。",
         "validating": "接続先と認証情報を確認中…", "closing_codex": "データベース保護のため Codex を終了中…",
         "writing_credentials": "設定と認証情報を安全に書き込み中…", "syncing_history": "履歴とインデックスを同期中…",
@@ -123,8 +148,10 @@ TRANSLATIONS = {
         "third_party_api": "서드파티 API", "current": "●  사용 중", "auto": "자동", "unknown": "알 수 없음",
         "loading": "불러오는 중…", "detecting": "확인 중…", "verify_on_switch": "전환 시 API 확인", "auto_close": "Codex 자동 종료",
         "restart_after": "완료 후 다시 열기", "switch_selected": "선택한 Provider로 전환  →", "test_api": "✓  API 확인",
-        "repair_history": "기록 인덱스 복구", "open_backups": "백업 열기", "execution_log": "실행 로그", "select_profile": "Provider를 먼저 선택하세요.",
-        "builtin_official": "OpenAI 공식 계정(기본)", "builtin_login_needed": "OpenAI 공식 계정(로그인 필요)",
+        "repair_history": "기록 인덱스 복구", "open_backups": "백업 열기", "tokendance_get_key": "Key 받기", "tokendance_connect": "TokenDance 연결", "tokendance_dialog": "TokenDance 연결", "tokendance_save_connect": "저장 후 연결", "tokendance_hint": "엔드포인트는 기본 제공됩니다. API Key를 붙여넣고 Responses 지원 모델을 가져온 뒤 연결하세요.", "tokendance_key_required": "TokenDance API Key를 입력하거나 먼저 Key 받기를 누르세요.", "execution_log": "실행 로그", "select_profile": "Provider를 먼저 선택하세요.",
+        "tokendance_card_desc": "Responses 게이트웨이 · 호환 모델 자동 검색", "tokendance_not_ready": "미설정 · Key를 받아 연결하세요", "tokendance_ready": "연결 준비됨 · {model}", "tokendance_active": "사용 중 · {model}", "tokendance_switch": "전환", "tokendance_in_use": "사용 중",
+        "tokendance_oauth_waiting": "브라우저에서 TokenDance 인증을 열었습니다. 인증을 기다리는 중…", "tokendance_oauth_done": "TokenDance 인증에 성공했으며 Key를 로컬에 암호화해 저장했습니다.", "tokendance_oauth_failed": "TokenDance 인증 실패: {error}",
+        "builtin_official": "OpenAI 공식 계정(기본)", "builtin_login_needed": "OpenAI 공식 계정(로그인 필요)", "builtin_tokendance": "TokenDance(추천)", "builtin_tokendance_unconfigured": "TokenDance(추천 · API Key 필요)", "source_builtin_tokendance": "기본 · 추천 공급자", "source_tokendance_unconfigured": "기본 · API Key 설정 필요", "builtin_tokendance_edit_locked": "TokenDance는 기본 제공 설정입니다. 중복 생성하지 말고 API Key와 모델을 수정하세요.", "builtin_tokendance_delete_locked": "기본 TokenDance는 삭제할 수 없습니다. 비활성화하려면 API Key를 비우세요.",
         "source_saved_login": "기본 · 로그인 저장됨", "source_login_needed": "기본 · 로그인 필요", "source_local": "로컬 암호화 설정",
         "read_profiles": "로컬 Provider {count}개를 불러왔습니다.", "validating": "대상 API와 인증 정보를 확인하는 중…",
         "closing_codex": "데이터베이스 보호를 위해 Codex를 종료하는 중…", "writing_credentials": "설정과 인증 정보를 안전하게 쓰는 중…",
@@ -142,7 +169,7 @@ TRANSLATIONS = {
     },
 }
 TRANSLATIONS["zh-CN"] = {
-    "ok": "确定", "confirm": "继续", "cancel": "取消", "language_label": "语言",
+    "ok": "确定", "confirm": "继续", "cancel": "取消", "language_label": "语言", "subtitle": "Provider 切换与历史索引同步",
     "confirm_close": "切换时需要关闭正在运行的 Codex，未发送的输入会丢失。\n\n目标：{name}\n历史会自动备份并统一索引。\n\n继续吗？",
     "confirm_official_login": "没有找到已保存的 ChatGPT 官方登录会话。\n\n继续后会安全备份当前第三方配置，并让 Codex 进入官方登录流程。请在浏览器中选择“使用 ChatGPT 登录”，再使用你原来的 Google 账号。\n\n在完成登录前，CodexShift 不会把它标记为“已保存登录”。",
     "builtin_edit_locked": "内置官方账号配置由 CodexShift 维护，不能修改。", "builtin_delete_locked": "内置官方账号配置不能删除。",
@@ -329,7 +356,21 @@ def tr(key: str, **values) -> str:
             "verify_on_switch": "切换时验证第三方接口", "auto_close": "自动关闭 Codex", "restart_after": "完成后重新打开",
             "switch_selected": "切换到选中 Provider  →", "test_api": "✓  检测 API", "repair_history": "修复历史索引",
             "open_backups": "打开备份目录", "execution_log": "执行日志", "select_profile": "请先选择一个 Provider。",
-            "builtin_official": "OpenAI 官方账号（原生）", "builtin_login_needed": "OpenAI 官方账号（需重新登录）",
+    "builtin_official": "OpenAI 官方账号（原生）", "builtin_login_needed": "OpenAI 官方账号（需重新登录）",
+    "builtin_tokendance": "TokenDance（内置首选）", "builtin_tokendance_unconfigured": "TokenDance（内置首选 · 需要 API Key）",
+    "source_builtin_tokendance": "内置 · 首选供应商", "source_tokendance_unconfigured": "内置 · 请配置 API Key",
+    "builtin_tokendance_edit_locked": "TokenDance 是内置首选供应商，请直接编辑它的 API Key 和模型，不要重复新建。",
+    "builtin_tokendance_delete_locked": "内置 TokenDance 不能删除；如需停用，请清空 API Key。",
+    "tokendance_get_key": "获取 Key", "tokendance_connect": "一键接入",
+    "tokendance_dialog": "一键接入 TokenDance", "tokendance_save_connect": "保存并接入",
+    "tokendance_hint": "接口地址已经内置，只需粘贴 TokenDance API Key；可自动获取支持 Responses 的模型。",
+    "tokendance_key_required": "请填写 TokenDance API Key，或先点击“获取 Key”。",
+    "tokendance_card_desc": "Responses 网关 · 自动发现兼容模型",
+    "tokendance_not_ready": "尚未配置 · 获取 Key 后即可接入", "tokendance_ready": "已就绪 · {model}",
+    "tokendance_active": "正在使用 · {model}", "tokendance_switch": "切换使用", "tokendance_in_use": "正在使用",
+    "tokendance_oauth_waiting": "已在浏览器打开 TokenDance 授权页，正在等待授权…",
+    "tokendance_oauth_done": "TokenDance 授权成功，Key 已在本机加密保存。",
+    "tokendance_oauth_failed": "TokenDance 授权失败：{error}",
             "source_saved_login": "内置 · 已保存登录", "source_login_needed": "内置 · 需要重新登录", "source_local": "本地加密配置",
             "read_profiles": "已读取 {count} 个本地 Provider。", "validating": "正在验证目标接口与凭据…",
             "closing_codex": "正在关闭 Codex，避免数据库被占用…", "writing_credentials": "正在原子写入配置与账号凭据…",
@@ -548,6 +589,32 @@ def custom_provider_config(base_config: str, name: str, base_url: str, model: st
     return merge_toml(base_config, overlay)
 
 
+def tokendance_provider_config(base_config: str, model: str = TOKENDANCE_DEFAULT_MODEL, api_key: str = "") -> str:
+    """Build the fixed TokenDance Responses provider without duplicating TOML tables."""
+    q = lambda value: json.dumps(value, ensure_ascii=False)
+    overlay = (
+        f'model_provider = "{TOKENDANCE_PROVIDER}"\n'
+        f"model = {q(model or TOKENDANCE_DEFAULT_MODEL)}\n"
+        'preferred_auth_method = "apikey"\n'
+        'forced_login_method = "api"\n'
+        'model_reasoning_effort = "high"\n'
+        "disable_response_storage = true\n\n"
+        f"[model_providers.{TOKENDANCE_PROVIDER}]\n"
+        'name = "TokenDance"\n'
+        f'base_url = "{TOKENDANCE_BASE_URL}"\n'
+        'wire_api = "responses"\n'
+        "request_max_retries = 4\n"
+        "stream_max_retries = 5\n"
+    )
+    if api_key.strip():
+        overlay += f"experimental_bearer_token = {q(api_key.strip())}\n"
+    overlay += (
+        f"\n[model_providers.{TOKENDANCE_PROVIDER}.http_headers]\n"
+        f'X-App-URL = "{TOKENDANCE_APP_URL}"\n'
+    )
+    return merge_toml(base_config, overlay)
+
+
 def provider_signature(config_text: str, auth: dict) -> tuple[str, str, str, str] | None:
     try:
         return (
@@ -614,6 +681,10 @@ class Provider:
         return self.id == BUILTIN_OFFICIAL_ID or (
             self.model_provider == OFFICIAL_PROVIDER and self.auth.get("auth_mode") == "chatgpt"
         )
+
+    @property
+    def is_tokendance(self) -> bool:
+        return self.id == BUILTIN_TOKENDANCE_ID
 
     @property
     def kind_label(self) -> str:
@@ -2726,7 +2797,11 @@ def fetch_provider_models(provider: Provider, timeout: int = 10) -> list[str]:
     url = base_url.rstrip("/") + "/models"
     request = urllib.request.Request(
         url,
-        headers={"Authorization": f"Bearer {key.strip()}", "User-Agent": "CodexShift/1"},
+        headers={
+            "Authorization": f"Bearer {key.strip()}",
+            "User-Agent": "CodexShift/1",
+            **({"X-App-URL": "app://codexshift"} if provider.is_tokendance else {}),
+        },
     )
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
@@ -2736,6 +2811,15 @@ def fetch_provider_models(provider: Provider, timeout: int = 10) -> list[str]:
             if len(raw) > 2 * 1024 * 1024:
                 raise SwitchError("/models 返回内容超过 2 MB，已停止解析。")
     except urllib.error.HTTPError as exc:
+        if provider.is_tokendance:
+            recovery = exc.headers.get("TokenDance-Recovery-Action", "")
+            recovery_messages = {
+                "top_up_balance": "TokenDance 余额不足，请充值后重试；当前 Key 仍然有效。",
+                "reauthorize_api_key": "TokenDance Key 已失效，请重新点击“获取 Key”完成授权。",
+                "api_key_quota": "TokenDance Key 已达到周期额度，请等待刷新或重新授权。",
+            }
+            if recovery in recovery_messages:
+                raise SwitchError(recovery_messages[recovery]) from exc
         if exc.code in (400, 404, 405):
             raise ModelDiscoveryUnavailable(f"服务未开放 /models（HTTP {exc.code}）。") from exc
         if exc.code in (401, 403):
@@ -2758,6 +2842,10 @@ def fetch_provider_models(provider: Provider, timeout: int = 10) -> list[str]:
         if isinstance(item, str) and item.strip():
             models.add(item.strip())
         elif isinstance(item, dict):
+            if provider.is_tokendance:
+                protocols = item.get("supported_protocols")
+                if not isinstance(protocols, list) or "openai:responses" not in protocols:
+                    continue
             value = item.get("id") or item.get("name") or item.get("model")
             if isinstance(value, str) and value.strip():
                 models.add(value.strip())
@@ -2797,7 +2885,7 @@ class SwitchEngine:
         vault = self._import_live_api_profile(vault)
         providers: list[Provider] = []
         for provider_id, saved in vault.items():
-            if provider_id == BUILTIN_OFFICIAL_ID or not isinstance(saved, dict):
+            if provider_id in (BUILTIN_OFFICIAL_ID, BUILTIN_TOKENDANCE_ID) or not isinstance(saved, dict):
                 continue
             if not saved.get("config") or not isinstance(saved.get("auth"), dict):
                 continue
@@ -2817,6 +2905,7 @@ class SwitchEngine:
             )
         providers.sort(key=lambda item: item.name.casefold())
         providers.insert(0, self._builtin_official_provider(providers, vault))
+        providers.insert(1, self._builtin_tokendance_provider(vault))
         current_id = self.current_provider_id(providers)
         for provider in providers:
             provider.is_current = provider.id == current_id
@@ -2869,6 +2958,17 @@ class SwitchEngine:
         except (OSError, SwitchError, tomllib.TOMLDecodeError):
             return vault
         if auth.get("auth_mode") != "apikey":
+            return vault
+        if effective_model_provider(config) == TOKENDANCE_PROVIDER:
+            # TokenDance is a stable built-in entry, never an imported snapshot.
+            vault[BUILTIN_TOKENDANCE_ID] = {
+                "name": "TokenDance",
+                "config": tokendance_provider_config(config, provider_model(config) or TOKENDANCE_DEFAULT_MODEL, auth.get("OPENAI_API_KEY", "")),
+                "auth": auth,
+                "managed_by": APP_NAME,
+                "builtin": True,
+            }
+            self.vault.save(vault)
             return vault
         live_signature = provider_signature(config, auth)
         for saved in vault.values():
@@ -2968,6 +3068,33 @@ class SwitchEngine:
         name = tr("builtin_official") if has_login else tr("builtin_login_needed")
         return Provider(BUILTIN_OFFICIAL_ID, name, config, auth, source=source)
 
+    def _builtin_tokendance_provider(self, vault: dict) -> Provider:
+        config_path = self.codex_home / "config.toml"
+        current_config = config_path.read_text(encoding="utf-8") if config_path.exists() else ""
+        saved = vault.get(BUILTIN_TOKENDANCE_ID)
+        saved = saved if isinstance(saved, dict) else {}
+        saved_auth = saved.get("auth") if isinstance(saved.get("auth"), dict) else {}
+        key = str(saved_auth.get("OPENAI_API_KEY") or "").strip()
+        saved_config = saved.get("config") if isinstance(saved.get("config"), str) else ""
+        model = provider_model(saved_config) or TOKENDANCE_DEFAULT_MODEL
+        config = tokendance_provider_config(saved_config or current_config, model, key)
+        auth = {"OPENAI_API_KEY": key, "auth_mode": "apikey"} if key else {"auth_mode": "logged_out"}
+        if not key and effective_model_provider(current_config) == TOKENDANCE_PROVIDER:
+            live_auth = read_json(self.codex_home / "auth.json", {})
+            live_key = str(live_auth.get("OPENAI_API_KEY") or "").strip() if isinstance(live_auth, dict) else ""
+            if live_key:
+                key = live_key
+                auth = {"OPENAI_API_KEY": key, "auth_mode": "apikey"}
+                config = tokendance_provider_config(saved_config or current_config, model, key)
+                vault[BUILTIN_TOKENDANCE_ID] = {
+                    "name": "TokenDance", "config": config, "auth": auth,
+                    "managed_by": APP_NAME, "builtin": True,
+                }
+                self.vault.save(vault)
+        name_key = "builtin_tokendance" if key else "builtin_tokendance_unconfigured"
+        source_key = "source_builtin_tokendance" if key else "source_tokendance_unconfigured"
+        return Provider(BUILTIN_TOKENDANCE_ID, tr(name_key), config, auth, source=tr(source_key))
+
     def current_provider_id(self, providers: Iterable[Provider] | None = None) -> str | None:
         value = self.state().get("active_provider_id")
         if value:
@@ -3003,6 +3130,8 @@ class SwitchEngine:
         if processes and not close:
             raise SwitchError("Codex 仍在运行。请勾选“自动关闭 Codex”，或先手动退出。")
         target = provider.model_provider
+        if provider.id == BUILTIN_TOKENDANCE_ID and provider.auth.get("auth_mode") != "apikey":
+            raise SwitchError("请先编辑内置 TokenDance 配置并填写 API Key。")
         needs_official_login = provider.id == BUILTIN_OFFICIAL_ID and provider.auth.get("auth_mode") != "chatgpt"
         auth = None if needs_official_login else normalize_auth(provider.auth, target)
         tomllib.loads(provider.config)
@@ -3013,7 +3142,13 @@ class SwitchEngine:
                 raise SwitchError(f"配置里没有 [model_providers.{target}] 或 base_url。")
             if selected.get("wire_api", "responses") != "responses":
                 raise SwitchError("当前 Codex 只支持 Responses 协议（wire_api = 'responses'）。")
-            if not selected.get("requires_openai_auth", False):
+            if provider.id == BUILTIN_TOKENDANCE_ID:
+                headers = selected.get("http_headers")
+                if selected.get("experimental_bearer_token") != auth.get("OPENAI_API_KEY"):
+                    raise SwitchError("TokenDance 配置中的授权 Key 不一致。")
+                if not isinstance(headers, dict) or headers.get("X-App-URL") != TOKENDANCE_APP_URL:
+                    raise SwitchError("TokenDance 请求归因配置缺失。")
+            elif not selected.get("requires_openai_auth", False):
                 raise SwitchError("第三方 Provider 必须设置 requires_openai_auth = true 才能使用 auth.json 的 Key。")
 
         provider = Provider(provider.id, provider.name, provider.config, auth or {"auth_mode": "logged_out"}, provider.is_current, provider.source)
@@ -3099,6 +3234,26 @@ class SwitchEngine:
             raise SwitchError("Base URL 必须以 http:// 或 https:// 开头。")
         if provider is not None and provider.id == BUILTIN_OFFICIAL_ID:
             raise SwitchError("内置官方账号配置不能修改。")
+        if provider is not None and provider.id == BUILTIN_TOKENDANCE_ID:
+            if not api_key:
+                api_key = str(provider.auth.get("OPENAI_API_KEY") or "").strip()
+            if not api_key:
+                raise SwitchError("请填写 TokenDance API Key。")
+            if not model:
+                model = TOKENDANCE_DEFAULT_MODEL
+            config = tokendance_provider_config(provider.config, model, api_key)
+            auth = {"OPENAI_API_KEY": api_key, "auth_mode": "apikey"}
+            result = Provider(BUILTIN_TOKENDANCE_ID, tr("builtin_tokendance"), config, auth, source=tr("source_builtin_tokendance"))
+            vault = self.vault.load()
+            vault[BUILTIN_TOKENDANCE_ID] = {
+                "name": "TokenDance",
+                "config": config,
+                "auth": auth,
+                "managed_by": APP_NAME,
+                "builtin": True,
+            }
+            self.vault.save(vault)
+            return result
         if not api_key and provider is not None:
             api_key = str(provider.auth.get("OPENAI_API_KEY") or "").strip()
         if not api_key:
@@ -3128,6 +3283,8 @@ class SwitchEngine:
     def delete_provider(self, provider: Provider) -> None:
         if provider.id == BUILTIN_OFFICIAL_ID:
             raise SwitchError("内置官方账号配置不能删除。")
+        if provider.id == BUILTIN_TOKENDANCE_ID:
+            raise SwitchError("内置 TokenDance 不能删除；如需停用，请清空 API Key。")
         vault = self.vault.load()
         saved = vault.get(provider.id)
         if not isinstance(saved, dict):
@@ -3277,15 +3434,16 @@ class NewProviderDialog(tk.Toplevel):
         self.engine = parent.engine
         self.provider = provider
         editing = provider is not None
-        self.title(tr("edit_dialog") if editing else tr("new_dialog"))
+        self.is_tokendance_dialog = bool(provider and provider.id == BUILTIN_TOKENDANCE_ID)
+        self.title(tr("tokendance_dialog") if self.is_tokendance_dialog else (tr("edit_dialog") if editing else tr("new_dialog")))
         self.geometry("600x430")
         self.resizable(False, False)
         self.configure(bg="#f5f7fb")
         self.transient(parent)
         self.grab_set()
-        self.name_var = tk.StringVar(value=provider.name if provider else "")
-        self.url_var = tk.StringVar(value=provider_base_url(provider.config) or "" if provider else "")
-        self.key_var = tk.StringVar()
+        self.name_var = tk.StringVar(value=("TokenDance" if self.is_tokendance_dialog else (provider.name if provider else "")))
+        self.url_var = tk.StringVar(value=(TOKENDANCE_BASE_URL if self.is_tokendance_dialog else (provider_base_url(provider.config) or "" if provider else "")))
+        self.key_var = tk.StringVar(value=(str(provider.auth.get("OPENAI_API_KEY") or "") if provider and provider.id == BUILTIN_TOKENDANCE_ID else ""))
         self.model_var = tk.StringVar(value=(provider_model(provider.config) or "") if provider else "gpt-5.6-terra")
         hint = tr("edit_hint") if editing else tr("new_hint")
         self.status_var = tk.StringVar(value=hint)
@@ -3295,29 +3453,37 @@ class NewProviderDialog(tk.Toplevel):
     def _build(self) -> None:
         frame = ttk.Frame(self, padding=24)
         frame.pack(fill="both", expand=True)
-        title = tr("edit_dialog") if self.provider else tr("new_dialog")
+        title = tr("tokendance_dialog") if self.is_tokendance_dialog else (tr("edit_dialog") if self.provider else tr("new_dialog"))
         ttk.Label(frame, text=title, style="Title.TLabel").grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 16))
-        fields = ((tr("profile_name"), self.name_var, False), ("Base URL", self.url_var, False), ("API Key", self.key_var, True))
-        for row, (label, variable, secret) in enumerate(fields, 1):
+        if self.is_tokendance_dialog:
+            ttk.Label(frame, text="Base URL").grid(row=1, column=0, sticky="w", padx=(0, 14), pady=7)
+            ttk.Label(frame, textvariable=self.url_var, foreground="#64748b").grid(row=1, column=1, sticky="w", pady=7)
+            fields = (("API Key", self.key_var, True),)
+        else:
+            fields = ((tr("profile_name"), self.name_var, False), ("Base URL", self.url_var, False), ("API Key", self.key_var, True))
+        start_row = 2 if self.is_tokendance_dialog else 1
+        for row, (label, variable, secret) in enumerate(fields, start_row):
             ttk.Label(frame, text=label).grid(row=row, column=0, sticky="w", padx=(0, 14), pady=7)
             entry = ttk.Entry(frame, textvariable=variable, width=49, show="●" if secret else "")
             entry.grid(row=row, column=1, sticky="ew", pady=7)
             if row == 1:
                 entry.focus_set()
-        ttk.Label(frame, text=tr("model_name")).grid(row=4, column=0, sticky="w", padx=(0, 14), pady=7)
+        model_row = 3 if self.is_tokendance_dialog else 4
+        ttk.Label(frame, text=tr("model_name")).grid(row=model_row, column=0, sticky="w", padx=(0, 14), pady=7)
         self.model_combo = ttk.Combobox(frame, textvariable=self.model_var, width=47, state="normal")
-        self.model_combo.grid(row=4, column=1, sticky="ew", pady=7)
-        ttk.Label(frame, textvariable=self.status_var, style="Sub.TLabel", wraplength=500).grid(
-            row=5, column=0, columnspan=2, sticky="w", pady=(12, 16)
+        self.model_combo.grid(row=model_row, column=1, sticky="ew", pady=7)
+        status_row = model_row + 1
+        ttk.Label(frame, text=(tr("tokendance_hint") if self.is_tokendance_dialog else self.status_var.get()), textvariable=None if self.is_tokendance_dialog else self.status_var, style="Sub.TLabel", wraplength=500).grid(
+            row=status_row, column=0, columnspan=2, sticky="w", pady=(12, 16)
         )
         buttons = ttk.Frame(frame)
-        buttons.grid(row=6, column=0, columnspan=2, sticky="ew")
+        buttons.grid(row=status_row + 1, column=0, columnspan=2, sticky="ew")
         self.models_button = ttk.Button(buttons, text=tr("fetch_models"), command=self.detect_models)
         self.models_button.pack(side="left")
         self.test_button = ttk.Button(buttons, text=tr("test_api").replace("✓  ", ""), command=self.test_api)
         self.test_button.pack(side="left", padx=(10, 0))
         ttk.Button(buttons, text=tr("cancel"), command=self.destroy).pack(side="right")
-        self.save_button = ttk.Button(buttons, text=tr("save_changes") if self.provider else tr("save_profile"), style="Primary.TButton", command=self.save)
+        self.save_button = ttk.Button(buttons, text=(tr("tokendance_save_connect") if self.is_tokendance_dialog else (tr("save_changes") if self.provider else tr("save_profile"))), style="Primary.TButton", command=self.save)
         self.save_button.pack(side="right", padx=10)
         frame.columnconfigure(1, weight=1)
 
@@ -3328,6 +3494,14 @@ class NewProviderDialog(tk.Toplevel):
         name, base_url, api_key, model = (v.strip() for v in self.values())
         if not api_key and self.provider is not None:
             api_key = str(self.provider.auth.get("OPENAI_API_KEY") or "").strip()
+        if self.is_tokendance_dialog:
+            if not api_key:
+                raise SwitchError(tr("tokendance_key_required"))
+            if require_model and not model:
+                raise SwitchError("请先选择或填写模型。")
+            model = model or TOKENDANCE_DEFAULT_MODEL
+            config = tokendance_provider_config(self.provider.config, model, api_key)
+            return Provider(BUILTIN_TOKENDANCE_ID, "TokenDance", config, {"OPENAI_API_KEY": api_key, "auth_mode": "apikey"}, source=tr("source_builtin_tokendance"))
         if not base_url or not api_key:
             raise SwitchError("请先填写 Base URL 和 API Key。")
         if require_model and (not name or not model):
@@ -3337,6 +3511,9 @@ class NewProviderDialog(tk.Toplevel):
         name = name or "待检测 Provider"
         model = model or "auto-detect"
         q = lambda value: json.dumps(value, ensure_ascii=False)
+        if self.provider is not None and self.provider.id == BUILTIN_TOKENDANCE_ID:
+            config = tokendance_provider_config(self.provider.config, model, api_key)
+            return Provider(BUILTIN_TOKENDANCE_ID, name, config, {"OPENAI_API_KEY": api_key, "auth_mode": "apikey"}, source=tr("source_builtin_tokendance"))
         config = (
             f"model_provider = \"custom\"\nmodel = {q(model)}\n"
             "[model_providers.custom]\n"
@@ -3418,6 +3595,35 @@ class NewProviderDialog(tk.Toplevel):
         self.parent.log(tr("saved_profile", action=action, name=provider.name))
         self.parent.refresh(select_id=provider.id)
         self.destroy()
+        if self.is_tokendance_dialog:
+            self.parent.after(150, self.parent.start_switch)
+
+class TokenDanceMark(tk.Frame):
+    """Official TokenDance logo with a subtle animated connection dot."""
+
+    def __init__(self, master):
+        super().__init__(master, bg="#111827", width=52, height=48)
+        self.pack_propagate(False)
+        source = resource_path("assets/tokendance-logo.png")
+        self.logo_image = tk.PhotoImage(file=str(source)) if source.exists() else None
+        if self.logo_image:
+            scale = max(1, self.logo_image.width() // 38)
+            self.display_image = self.logo_image.subsample(scale, scale) if scale > 1 else self.logo_image
+            tk.Label(self, image=self.display_image, bg="#111827", borderwidth=0).pack(expand=True)
+        self.dot = tk.Canvas(self, width=7, height=7, bg="#111827", highlightthickness=0, borderwidth=0)
+        self.dot.place(relx=1.0, rely=1.0, anchor="se", x=-4, y=-4)
+        self.dot_id = self.dot.create_oval(1, 1, 6, 6, fill="#39d98a", outline="")
+        self.dot_state = False
+        self._animate_dot()
+
+    def _animate_dot(self) -> None:
+        try:
+            self.dot_state = not self.dot_state
+            self.dot.itemconfigure(self.dot_id, fill="#70f0b0" if self.dot_state else "#39d98a")
+            self.after(700, self._animate_dot)
+        except tk.TclError:
+            pass
+
 
 class App(tk.Tk):
     def __init__(self):
@@ -3432,7 +3638,7 @@ class App(tk.Tk):
         if IS_WINDOWS and icon_ico.exists():
             self.iconbitmap(str(icon_ico))
         self.geometry("1040x820")
-        self.minsize(920, 720)
+        self.minsize(920, 760)
         self.configure(bg="#f3f5fa")
         self.engine = SwitchEngine(configured_codex_home(), self.log)
         self.providers_cache: list[Provider] = []
@@ -3442,6 +3648,7 @@ class App(tk.Tk):
         self.status_var = tk.StringVar(value=tr("loading"))
         self.current_name_var = tk.StringVar(value=tr("detecting"))
         self.provider_count_var = tk.StringVar(value=tr("profile_count", count=0))
+        self.tokendance_status_var = tk.StringVar(value=tr("tokendance_not_ready"))
         self.language_var = tk.StringVar(value=LANGUAGE_LABELS[CURRENT_LANGUAGE])
         self._build_style()
         self._build_ui()
@@ -3469,7 +3676,7 @@ class App(tk.Tk):
         style.configure("Danger.TButton", font=(UI_FONT, 9), padding=(13, 9), background="#fff1f2", foreground="#be3447", borderwidth=0)
         style.map("Danger.TButton", background=[("active", "#ffe3e6"), ("disabled", "#f7f3f4")], foreground=[("disabled", "#c9aeb2")])
         style.configure("TButton", font=(UI_FONT, 10), padding=(13, 8))
-        style.configure("Treeview", rowheight=44, font=(UI_FONT, 10), background="#ffffff", fieldbackground="#ffffff", foreground="#263247", borderwidth=0)
+        style.configure("Treeview", rowheight=36, font=(UI_FONT, 10), background="#ffffff", fieldbackground="#ffffff", foreground="#263247", borderwidth=0)
         style.configure("Migration.Treeview", rowheight=30, font=(UI_FONT, 10), background="#ffffff", fieldbackground="#ffffff", foreground="#263247", borderwidth=0, indent=22)
         style.map("Migration.Treeview", background=[("selected", "#e9e7ff")], foreground=[("selected", "#302878")])
         style.configure("Treeview.Heading", font=(UI_FONT, 9, "bold"), padding=(10, 10), background="#f7f8fb", foreground="#6b7585", relief="flat")
@@ -3480,11 +3687,11 @@ class App(tk.Tk):
         style.map("Card.TRadiobutton", background=[("active", "#ffffff")], foreground=[("disabled", "#9aa3b2")])
 
     def _build_ui(self) -> None:
-        topbar = tk.Frame(self, bg="#11152c", height=126)
+        topbar = tk.Frame(self, bg="#11152c", height=104)
         topbar.pack(fill="x")
         topbar.pack_propagate(False)
         topbar_inner = tk.Frame(topbar, bg="#11152c")
-        topbar_inner.pack(fill="both", expand=True, padx=34, pady=25)
+        topbar_inner.pack(fill="both", expand=True, padx=34, pady=17)
         if hasattr(self, "_icon_image"):
             self._header_logo = self._icon_image.subsample(16, 16)
             tk.Label(topbar_inner, image=self._header_logo, bg="#11152c", borderwidth=0).pack(side="left", padx=(0, 17))
@@ -3588,7 +3795,7 @@ class App(tk.Tk):
         columns = ("name", "kind", "model", "source", "current")
         tree_holder = ttk.Frame(provider_card, style="Card.TFrame")
         tree_holder.pack(fill="x")
-        self.tree = ttk.Treeview(tree_holder, columns=columns, show="headings", height=5, selectmode="browse")
+        self.tree = ttk.Treeview(tree_holder, columns=columns, show="headings", height=4, selectmode="browse")
         tree_scroll = ttk.Scrollbar(tree_holder, orient="vertical", command=self.tree.yview)
         self.tree.configure(yscrollcommand=tree_scroll.set)
         headings = {"name": "PROVIDER", "kind": tr("type"), "model": tr("model"), "source": tr("source"), "current": tr("status")}
@@ -3621,6 +3828,55 @@ class App(tk.Tk):
         self.migration_button = ttk.Button(actions, text=tr("migration"), style="Ghost.TButton", command=self.show_migration)
         self.migration_button.pack(side="left", padx=(10, 0))
         ttk.Button(actions, text=tr("open_backups"), style="Ghost.TButton", command=self.open_backups).pack(side="right")
+
+        tokendance_border = tk.Frame(outer, bg="#dce2ec")
+        tokendance_border.pack(fill="x", pady=(0, 12))
+        tokendance_card = tk.Frame(tokendance_border, bg="#ffffff", height=76)
+        tokendance_card.pack(fill="x", padx=1, pady=1)
+        tokendance_card.pack_propagate(False)
+        tk.Frame(tokendance_card, bg="#39b980", width=4).pack(side="left", fill="y")
+
+        mark_holder = tk.Frame(tokendance_card, bg="#111827", width=52, height=48)
+        mark_holder.pack(side="left", padx=(14, 12), pady=13)
+        mark_holder.pack_propagate(False)
+        self.tokendance_mark = TokenDanceMark(mark_holder)
+        self.tokendance_mark.configure(width=52, height=48)
+        self.tokendance_mark.pack(fill="both", expand=True)
+
+        tokendance_copy = tk.Frame(tokendance_card, bg="#ffffff")
+        tokendance_copy.pack(side="left", fill="both", expand=True, pady=13)
+        tk.Label(
+            tokendance_copy, text="TokenDance", bg="#ffffff", fg="#111827",
+            font=("Segoe UI", 13, "bold"), anchor="w",
+        ).pack(anchor="w")
+        tk.Label(
+            tokendance_copy, text=tr("tokendance_card_desc"), bg="#ffffff", fg="#64748b",
+            font=(UI_FONT, 8), anchor="w",
+        ).pack(anchor="w", pady=(2, 0))
+        self.tokendance_status_label = tk.Label(
+            tokendance_copy, textvariable=self.tokendance_status_var, bg="#ffffff", fg="#b56a16",
+            font=(UI_FONT, 8, "bold"), anchor="w",
+        )
+        self.tokendance_status_label.pack(anchor="w", pady=(3, 0))
+
+        tokendance_actions = tk.Frame(tokendance_card, bg="#ffffff")
+        tokendance_actions.pack(side="right", padx=14, pady=17)
+        self.tokendance_key_button = tk.Button(
+            tokendance_actions, text=tr("tokendance_get_key"), command=self.open_tokendance_keys,
+            width=12, padx=10, pady=7, relief="flat", borderwidth=0,
+            highlightthickness=1, highlightbackground="#dfe3eb", highlightcolor="#6257e8",
+            background="#ffffff", activebackground="#f6f7fb", foreground="#334155",
+            activeforeground="#1f2937", font=(UI_FONT, 9), cursor="hand2",
+        )
+        self.tokendance_key_button.pack(side="left")
+        self.tokendance_connect_button = tk.Button(
+            tokendance_actions, text=tr("tokendance_connect"), command=self.quick_connect_tokendance,
+            width=14, padx=10, pady=7, relief="flat", borderwidth=0,
+            highlightthickness=1, highlightbackground="#d9d5ff", highlightcolor="#6257e8",
+            background="#eeecff", activebackground="#dedaff", foreground="#4d43c7",
+            activeforeground="#302878", font=(UI_FONT, 9, "bold"), cursor="hand2",
+        )
+        self.tokendance_connect_button.pack(side="left", padx=(10, 0))
 
         log_border = tk.Frame(outer, bg="#1b2437")
         log_border.pack(fill="both", expand=True)
@@ -3685,7 +3941,7 @@ class App(tk.Tk):
     def refresh(self, select_id: str | None = None) -> None:
         try:
             self.providers_cache = self.engine.providers()
-            self.tree.configure(height=min(7, max(5, len(self.providers_cache))))
+            self.tree.configure(height=min(6, max(4, len(self.providers_cache))))
             self.tree.delete(*self.tree.get_children())
             selected = None
             for provider in self.providers_cache:
@@ -3710,6 +3966,20 @@ class App(tk.Tk):
                 self.tree.selection_set(self.providers_cache[0].id)
             current = next((p for p in self.providers_cache if p.is_current), None)
             self.current_name_var.set(current.name if current else tr("unknown"))
+            tokendance = next((p for p in self.providers_cache if p.id == BUILTIN_TOKENDANCE_ID), None)
+            token_model = (provider_model(tokendance.config) if tokendance else None) or TOKENDANCE_DEFAULT_MODEL
+            if tokendance and tokendance.is_current:
+                self.tokendance_status_var.set(tr("tokendance_active", model=token_model))
+                self.tokendance_status_label.configure(fg="#16845b")
+                self.tokendance_connect_button.configure(text=tr("tokendance_in_use"))
+            elif tokendance and tokendance.auth.get("auth_mode") == "apikey":
+                self.tokendance_status_var.set(tr("tokendance_ready", model=token_model))
+                self.tokendance_status_label.configure(fg="#16845b")
+                self.tokendance_connect_button.configure(text=tr("tokendance_switch"))
+            else:
+                self.tokendance_status_var.set(tr("tokendance_not_ready"))
+                self.tokendance_status_label.configure(fg="#b56a16")
+                self.tokendance_connect_button.configure(text=tr("tokendance_connect"))
             self.provider_count_var.set(tr("profile_count", count=len(self.providers_cache)))
             self.status_var.set(f"Codex Home  ·  {self.engine.codex_home}")
             self.update_provider_actions()
@@ -3733,6 +4003,8 @@ class App(tk.Tk):
         self.test_button.configure(state=state)
         self.new_button.configure(state=state)
         self.repair_button.configure(state=state)
+        self.tokendance_key_button.configure(state=state)
+        self.tokendance_connect_button.configure(state=state)
         if busy:
             self.edit_button.configure(state="disabled")
             self.delete_button.configure(state="disabled")
@@ -3742,9 +4014,9 @@ class App(tk.Tk):
     def update_provider_actions(self) -> None:
         chosen = self.tree.selection() if hasattr(self, "tree") else ()
         provider = next((p for p in self.providers_cache if chosen and p.id == chosen[0]), None)
-        state = "normal" if provider and provider.id != BUILTIN_OFFICIAL_ID else "disabled"
+        state = "normal" if provider and provider.id not in (BUILTIN_OFFICIAL_ID,) else "disabled"
         self.edit_button.configure(state=state)
-        self.delete_button.configure(state=state)
+        self.delete_button.configure(state="normal" if provider and provider.id not in (BUILTIN_OFFICIAL_ID, BUILTIN_TOKENDANCE_ID) else "disabled")
 
     def _run(self, work: Callable[[], None]) -> None:
         self.set_busy(True)
@@ -3774,6 +4046,104 @@ class App(tk.Tk):
                 return
         self._run(lambda: self.engine.switch(provider, self.verify_var.get(), self.close_var.get(), self.restart_var.get()))
 
+    def open_tokendance_keys(self) -> None:
+        verifier = secrets.token_urlsafe(64)[:96]
+        digest = hashlib.sha256(verifier.encode("ascii")).digest()
+        challenge = base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
+        flow = secrets.token_urlsafe(18)
+        parent = self
+
+        class OAuthCallback(BaseHTTPRequestHandler):
+            def do_GET(self):
+                parsed = urllib.parse.urlparse(self.path)
+                query = urllib.parse.parse_qs(parsed.query)
+                code = (query.get("code") or [""])[0]
+                received_flow = (query.get("flow") or [""])[0]
+                ok = parsed.path == "/callback" and received_flow == flow and bool(code)
+                body = (
+                    "<h2>TokenDance connected</h2><p>You can return to CodexShift.</p>"
+                    if ok else "<h2>Authorization failed</h2><p>Return to CodexShift and try again.</p>"
+                ).encode("utf-8")
+                self.send_response(200 if ok else 400)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                if ok:
+                    threading.Thread(target=parent._exchange_tokendance_key, args=(code, verifier), daemon=True).start()
+
+            def log_message(self, *_args):
+                pass
+
+        try:
+            server = ThreadingHTTPServer(("127.0.0.1", 0), OAuthCallback)
+        except OSError as exc:
+            app_dialog(self, tr("tokendance_oauth_failed", error=exc), kind="error")
+            return
+        port = server.server_address[1]
+        callback = f"http://127.0.0.1:{port}/callback?flow={urllib.parse.quote(flow)}"
+        params = urllib.parse.urlencode({
+            "callback_url": callback,
+            "code_challenge": challenge,
+            "code_challenge_method": "S256",
+            "app_url": TOKENDANCE_APP_URL,
+            "key_name": "codexshift",
+        })
+        self._tokendance_oauth_server = server
+        threading.Thread(target=server.handle_request, daemon=True).start()
+        webbrowser.open(f"{TOKENDANCE_AUTH_URL}?{params}")
+        self.log(tr("tokendance_oauth_waiting"))
+
+    def _exchange_tokendance_key(self, code: str, verifier: str) -> None:
+        try:
+            payload = json.dumps({
+                "code": code,
+                "code_verifier": verifier,
+                "code_challenge_method": "S256",
+            }).encode("utf-8")
+            request = urllib.request.Request(
+                TOKENDANCE_KEY_EXCHANGE_URL,
+                data=payload,
+                headers={"Content-Type": "application/json", "User-Agent": "CodexShift/1"},
+                method="POST",
+            )
+            with urllib.request.urlopen(request, timeout=20) as response:
+                result = json.loads(response.read(256 * 1024).decode("utf-8-sig"))
+            key = str(result.get("key") or "").strip() if isinstance(result, dict) else ""
+            if not key:
+                raise SwitchError("授权接口没有返回 API Key。")
+            provider = next(p for p in self.engine.providers() if p.id == BUILTIN_TOKENDANCE_ID)
+            self.engine.save_custom_provider(
+                provider, "TokenDance", TOKENDANCE_BASE_URL, key,
+                provider_model(provider.config) or TOKENDANCE_DEFAULT_MODEL,
+            )
+            self.log(tr("tokendance_oauth_done"))
+            self.after(0, lambda: self.refresh(select_id=BUILTIN_TOKENDANCE_ID))
+            self.after(250, self.quick_connect_tokendance)
+        except Exception as exc:
+            self.log(tr("tokendance_oauth_failed", error=exc))
+            self.after(0, lambda e=exc: app_dialog(self, tr("tokendance_oauth_failed", error=e), kind="error"))
+        finally:
+            server = getattr(self, "_tokendance_oauth_server", None)
+            if server is not None:
+                server.server_close()
+
+    def quick_connect_tokendance(self) -> None:
+        provider = next((item for item in self.providers_cache if item.id == BUILTIN_TOKENDANCE_ID), None)
+        if provider is None:
+            self.refresh(select_id=BUILTIN_TOKENDANCE_ID)
+            provider = next((item for item in self.providers_cache if item.id == BUILTIN_TOKENDANCE_ID), None)
+        if provider is None:
+            app_dialog(self, "未找到内置 TokenDance 配置。", kind="error")
+            return
+        self.tree.selection_set(provider.id)
+        self.tree.focus(provider.id)
+        self.update_provider_actions()
+        if provider.auth.get("auth_mode") != "apikey":
+            NewProviderDialog(self, provider)
+            return
+        self.start_switch()
+
     def new_provider(self) -> None:
         NewProviderDialog(self)
 
@@ -3792,6 +4162,9 @@ class App(tk.Tk):
             return
         if provider.id == BUILTIN_OFFICIAL_ID:
             app_dialog(self, tr("builtin_delete_locked"))
+            return
+        if provider.id == BUILTIN_TOKENDANCE_ID:
+            app_dialog(self, tr("builtin_tokendance_delete_locked"))
             return
         if not app_dialog(self, tr("confirm_delete", name=provider.name), kind="warning", confirm=True):
             return

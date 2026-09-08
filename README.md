@@ -55,6 +55,7 @@ CodexShift 的核心流程是：
 ## 功能
 
 - **原生官方账号切换**：内置“OpenAI 官方账号（原生）”入口，可恢复已保存的官方登录凭据，也可以安全返回 Codex 原生登录流程。
+- **TokenDance 内置接入**：通过 OAuth + PKCE 一键获取并保存 API Key，也支持手动粘贴；模型列表只展示明确声明支持 `openai:responses` 的模型。创建 Key 和每次 Responses 请求都会携带稳定的 `app://codexshift` 应用归因，且不会生成重复配置。
 - **第三方 API 配置管理**：支持新建、编辑和删除配置，并在多套 Provider 之间快速切换。
 - **API 与模型检测**：验证 API Key、接口连通性和 Responses 协议兼容性，并通过 OpenAI 兼容的 `/models` 接口自动发现可用模型。
 - **配置与凭据同步**：切换时同时更新 Codex 配置和认证信息，自动移除互相冲突的官方账号或 API Key 字段。
@@ -73,8 +74,8 @@ CodexShift 的核心流程是：
 
 | 系统 | 文件 |
 | --- | --- |
-| Windows 10/11 x64 | `CodexShift-v1.8.1-Windows-x64.exe` |
-| macOS | `CodexShift-v1.8.1-macOS-Universal.zip` |
+| Windows 10/11 x64 | `CodexShift-v1.9.0-Windows-x64.exe` |
+| macOS | `CodexShift-v1.9.0-macOS-Universal.zip` |
 
 1. 打开 CodexShift，确认顶部显示的 Codex Home 路径正确。
 2. 选择内置官方账号，或新建一个第三方 API 配置。

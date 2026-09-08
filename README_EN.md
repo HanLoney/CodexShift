@@ -47,6 +47,7 @@ Beyond Provider switching and historical index repair, CodexShift can move accum
 ## Features
 
 - Built-in native OpenAI account profile, with saved credential recovery and the original sign-in flow.
+- **Built-in TokenDance integration:** obtain and store an API Key through OAuth + PKCE or paste one manually; model discovery only lists models explicitly advertising `openai:responses`. Key creation and every Responses request carry the stable `app://codexshift` attribution, without duplicate snapshots.
 - Create, edit, and delete third-party API profiles.
 - Test API connectivity and credentials, and discover models from OpenAI-compatible `/models` endpoints.
 - Switch configuration and authentication data while removing conflicting account fields.
@@ -65,8 +66,8 @@ Download the appropriate file from [Releases](https://github.com/HanLoney/CodexS
 
 | Platform | File |
 | --- | --- |
-| Windows 10/11 x64 | `CodexShift-v1.8.1-Windows-x64.exe` |
-| macOS | `CodexShift-v1.8.1-macOS-Universal.zip` |
+| Windows 10/11 x64 | `CodexShift-v1.9.0-Windows-x64.exe` |
+| macOS | `CodexShift-v1.9.0-macOS-Universal.zip` |
 
 Open CodexShift, verify the detected Codex Home, choose or create a Provider, optionally test its API, then click the switch button. CodexShift backs up the data and synchronizes historical task indexes as part of the switch. Codex must close during the operation. Backups are stored in `~/.codex/switcher_backups`.
 

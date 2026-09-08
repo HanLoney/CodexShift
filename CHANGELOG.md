@@ -2,6 +2,15 @@
 
 All notable changes to CodexShift are documented here.
 
+## 1.9.0
+
+- Added TokenDance as a built-in preferred third-party Provider using the Responses gateway.
+- Added fixed-ID TokenDance editing and encrypted API Key storage without duplicate profiles.
+- Added `openai:responses` model filtering for TokenDance `/models` discovery and `X-App-URL` attribution.
+- Added OAuth + PKCE Key authorization with `app://codexshift` Key attribution and explicit request attribution in Codex `http_headers`.
+- Added recovery guidance for TokenDance balance, invalid-Key, and periodic-quota responses.
+- Kept the native OpenAI account entry and existing custom Provider workflows unchanged.
+
 ## 1.8.1
 
 - Fixed repeated automatic snapshots creating extra `custom` Provider profiles when the live model changed.

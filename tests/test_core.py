@@ -15,6 +15,7 @@ import codex_switcher
 
 from codex_switcher import (
     BUILTIN_OFFICIAL_ID,
+    BUILTIN_TOKENDANCE_ID,
     CheckOption,
     DeepSeekHarnessClient,
     DpapiVault,
@@ -124,7 +125,8 @@ class CoreTests(unittest.TestCase):
             })
             providers = engine.providers()
             self.assertEqual(providers[0].id, BUILTIN_OFFICIAL_ID)
-            self.assertEqual(providers[1].name, "API")
+            self.assertEqual(providers[1].id, BUILTIN_TOKENDANCE_ID)
+            self.assertEqual(providers[2].name, "API")
             self.assertTrue(providers[0].is_official)
             self.assertEqual(providers[0].kind_label, "官方账号")
 
@@ -234,7 +236,8 @@ class CoreTests(unittest.TestCase):
             engine = SwitchEngine(home, lambda _message: None)
             engine.vault = DpapiVault(home / "profiles.dpapi")
             providers = engine.providers()
-            self.assertEqual(providers[1].name, "Current API")
+            self.assertEqual(providers[1].id, BUILTIN_TOKENDANCE_ID)
+            self.assertEqual(providers[2].name, "Current API")
             saved = engine.vault.load()
             self.assertEqual(len(saved), 1)
             self.assertTrue(next(iter(saved.values()))["imported_from_current"])
@@ -271,7 +274,7 @@ class CoreTests(unittest.TestCase):
 
             providers = engine.providers()
             saved = engine.vault.load()
-            self.assertEqual([p.name for p in providers if p.id != BUILTIN_OFFICIAL_ID], ["My named API"])
+            self.assertEqual([p.name for p in providers if p.id not in (BUILTIN_OFFICIAL_ID, BUILTIN_TOKENDANCE_ID)], ["My named API"])
             self.assertEqual(codex_switcher.provider_model(saved[user.id]["config"]), "model-b")
             self.assertFalse(any(item.get("imported_from_current") for item in saved.values()))
 
@@ -304,6 +307,89 @@ class CoreTests(unittest.TestCase):
             )
             provider = Provider("test", "Test", config, {"OPENAI_API_KEY": "key-1"})
             self.assertEqual(fetch_provider_models(provider), ["model-a", "model-b"])
+        finally:
+            server.shutdown()
+            server.server_close()
+
+    def test_tokendance_provider_is_builtin_and_uses_responses_catalog(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            engine = SwitchEngine(home, lambda _message: None)
+            engine.vault = DpapiVault(home / "profiles.dpapi")
+            providers = engine.providers()
+            token = next(p for p in providers if p.id == BUILTIN_TOKENDANCE_ID)
+            self.assertEqual(token.model_provider, "tokendance")
+            self.assertIn('base_url = "https://tokendance.space/gateway/v1"', token.config)
+            self.assertIn('wire_api = "responses"', token.config)
+            self.assertIn('[model_providers.tokendance.http_headers]', token.config)
+            self.assertIn('X-App-URL = "app://codexshift"', token.config)
+            self.assertNotIn("requires_openai_auth", token.config)
+            self.assertEqual(token.auth["auth_mode"], "logged_out")
+
+    def test_tokendance_model_discovery_filters_supported_protocols(self):
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                body = json.dumps({"data": [
+                    {"id": "responses-model", "supported_protocols": ["openai:responses"]},
+                    {"id": "chat-model", "supported_protocols": ["openai:chat"]},
+                ]}).encode()
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *_args):
+                pass
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            port = server.server_address[1]
+            config = codex_switcher.tokendance_provider_config(
+                "", "responses-model"
+            ).replace("https://tokendance.space/gateway/v1", f"http://127.0.0.1:{port}")
+            provider = Provider(BUILTIN_TOKENDANCE_ID, "TokenDance", config, {"OPENAI_API_KEY": "key"})
+            self.assertEqual(fetch_provider_models(provider), ["responses-model"])
+        finally:
+            server.shutdown()
+            server.server_close()
+
+    def test_tokendance_save_reuses_fixed_id(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            engine = SwitchEngine(home, lambda _message: None)
+            engine.vault = DpapiVault(home / "profiles.dpapi")
+            token = next(p for p in engine.providers() if p.id == BUILTIN_TOKENDANCE_ID)
+            saved = engine.save_custom_provider(token, "TokenDance", "https://ignored.example", "key", "model-x")
+            self.assertEqual(saved.id, BUILTIN_TOKENDANCE_ID)
+            self.assertIn('experimental_bearer_token = "key"', saved.config)
+            self.assertEqual(
+                codex_switcher.tomllib.loads(saved.config)["model_providers"]["tokendance"]["http_headers"]["X-App-URL"],
+                "app://codexshift",
+            )
+            self.assertEqual(list(engine.vault.load()).count(BUILTIN_TOKENDANCE_ID), 1)
+            self.assertEqual(engine.providers()[-1].auth["OPENAI_API_KEY"], "key")
+
+    def test_tokendance_recovery_action_is_reported(self):
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(402)
+                self.send_header("TokenDance-Recovery-Action", "top_up_balance")
+                self.end_headers()
+
+            def log_message(self, *_args):
+                pass
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        try:
+            config = codex_switcher.tokendance_provider_config("", "model-x", "key").replace(
+                "https://tokendance.space/gateway/v1", f"http://127.0.0.1:{server.server_address[1]}"
+            )
+            provider = Provider(BUILTIN_TOKENDANCE_ID, "TokenDance", config, {"OPENAI_API_KEY": "key"})
+            with self.assertRaisesRegex(codex_switcher.SwitchError, "余额不足"):
+                fetch_provider_models(provider)
         finally:
             server.shutdown()
             server.server_close()

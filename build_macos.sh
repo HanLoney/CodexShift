@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT"
 
-VERSION="1.8.1"
+VERSION="1.9.0"
 TMP_DIR="$(mktemp -d)"
 ICONSET="$TMP_DIR/CodexShift.iconset"
 ICNS="$TMP_DIR/CodexShift.icns"
@@ -24,6 +24,8 @@ python3 -m PyInstaller --noconfirm --clean --windowed --target-arch universal2 \
   --name 'CodexShift' \
   --icon "$ICNS" \
   --add-data 'assets/codexshift-logo.png:assets' \
+  --add-data 'assets/tokendance-logo.png:assets' \
+  --add-data 'assets/tokendance-logo.svg:assets' \
   --add-data 'assets/codexshift.ico:assets' \
   codex_switcher.py
 
