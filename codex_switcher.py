@@ -35,7 +35,7 @@ from tkinter import filedialog, ttk
 
 
 APP_NAME = "CodexShift"
-APP_VERSION = "1.9.0"
+APP_VERSION = "1.9.1"
 OFFICIAL_PROVIDER = "openai"
 BUILTIN_OFFICIAL_ID = "codexshift-native-official"
 BUILTIN_TOKENDANCE_ID = "codexshift-tokendance"
@@ -93,6 +93,7 @@ TRANSLATIONS = {
         "source_local": "Local encrypted profile", "read_profiles": "Loaded {count} local Providers.",
         "validating": "Validating the target API and credentials…", "closing_codex": "Closing Codex to avoid locked databases…",
         "writing_credentials": "Writing configuration and credentials atomically…",
+        "third_party_compat": "Third-party compatibility settings applied; the active API Key is also stored in Codex's config.toml.",
         "syncing_history": "Synchronizing history Provider values and rebuilding indexes…",
         "switch_complete": "Switch complete: scanned {rollouts}, rewrote {changed}, updated {updated}, inserted {inserted}.",
         "official_login_ready": "Native OpenAI mode restored. Sign in to ChatGPT after opening Codex.",
@@ -127,6 +128,7 @@ TRANSLATIONS = {
         "source_login_needed": "内蔵 · ログイン必要", "source_local": "ローカル暗号化設定", "read_profiles": "ローカル Provider を {count} 件読み込みました。",
         "validating": "接続先と認証情報を確認中…", "closing_codex": "データベース保護のため Codex を終了中…",
         "writing_credentials": "設定と認証情報を安全に書き込み中…", "syncing_history": "履歴とインデックスを同期中…",
+        "third_party_compat": "サードパーティ互換設定を適用しました。使用中の API Key は Codex の config.toml にも保存されます。",
         "switch_complete": "切替完了：履歴 {rollouts} 件、書換 {changed} 件、更新 {updated} 件、追加 {inserted} 件。",
         "official_login_ready": "公式モードに戻しました。Codex を開いて ChatGPT にログインしてください。",
         "rolling_back": "エラーが発生したため自動復元しています…", "restarting_codex": "Codex を再起動中…",
@@ -155,6 +157,7 @@ TRANSLATIONS = {
         "source_saved_login": "기본 · 로그인 저장됨", "source_login_needed": "기본 · 로그인 필요", "source_local": "로컬 암호화 설정",
         "read_profiles": "로컬 Provider {count}개를 불러왔습니다.", "validating": "대상 API와 인증 정보를 확인하는 중…",
         "closing_codex": "데이터베이스 보호를 위해 Codex를 종료하는 중…", "writing_credentials": "설정과 인증 정보를 안전하게 쓰는 중…",
+        "third_party_compat": "서드파티 호환 설정을 적용했습니다. 사용 중인 API Key는 Codex의 config.toml에도 저장됩니다.",
         "syncing_history": "기록 Provider와 인덱스를 동기화하는 중…", "switch_complete": "전환 완료: 기록 {rollouts}, 변경 {changed}, 업데이트 {updated}, 추가 {inserted}.",
         "official_login_ready": "공식 모드로 복원했습니다. Codex에서 ChatGPT에 로그인하세요.", "rolling_back": "오류가 발생해 자동 복원 중…",
         "restarting_codex": "Codex를 다시 여는 중…", "scan_progress": "기록 파일 {index}/{total}개 확인…", "codex_closed": "Codex를 안전하게 종료했습니다.",
@@ -374,6 +377,7 @@ def tr(key: str, **values) -> str:
             "source_saved_login": "内置 · 已保存登录", "source_login_needed": "内置 · 需要重新登录", "source_local": "本地加密配置",
             "read_profiles": "已读取 {count} 个本地 Provider。", "validating": "正在验证目标接口与凭据…",
             "closing_codex": "正在关闭 Codex，避免数据库被占用…", "writing_credentials": "正在原子写入配置与账号凭据…",
+            "third_party_compat": "已应用第三方兼容配置；当前 API Key 也会保存在 Codex 的 config.toml 中。",
             "syncing_history": "正在统一历史 Provider 并补齐索引…", "switch_complete": "切换完成：扫描 {rollouts} 个历史，改写 {changed} 个，修复 {updated} 条，补回 {inserted} 条。",
             "official_login_ready": "已恢复 Codex 原生官方模式；打开 Codex 后请登录 OpenAI 官方账号。", "rolling_back": "发生错误，正在自动回滚…",
             "restarting_codex": "正在重新打开 Codex…", "scan_progress": "已扫描 {index}/{total} 个历史文件…", "codex_closed": "Codex 相关进程已安全退出。",
@@ -524,9 +528,82 @@ def merge_toml(base: str, overlay: str) -> str:
     return result
 
 
+def _remove_embedded_provider_keys(config_text: str, provider_ids: set[str], keys: set[str]) -> str:
+    """Remove managed credentials from inactive provider tables without touching other settings."""
+    root, tables, order = _split_toml(config_text)
+    for provider_id in provider_ids:
+        for header in (f"[model_providers.{provider_id}]", f'[model_providers.{json.dumps(provider_id)}]'):
+            if header in tables:
+                tables[header] = [line for line in tables[header] if _assignment_key(line) not in keys]
+    pieces = ["\n".join(root).strip()]
+    pieces.extend("\n".join(tables[header]).strip() for header in order)
+    result = "\n\n".join(piece for piece in pieces if piece) + "\n"
+    tomllib.loads(result)
+    return result
+
+
+def third_party_compat_config(config_text: str, api_key: str) -> str:
+    """Use the profile Key directly while keeping non-auth Provider settings intact."""
+    data = tomllib.loads(config_text)
+    provider_id = str(data.get("model_provider") or "")
+    selected = data.get("model_providers", {}).get(provider_id)
+    if not isinstance(selected, dict) or not selected.get("base_url"):
+        raise SwitchError("第三方 Provider 缺少 base_url。")
+    if selected.get("env_key") or selected.get("auth"):
+        raise SwitchError("此 Provider 已使用 env_key 或 auth 命令，不能自动改写认证方式。")
+    if not api_key.strip():
+        raise SwitchError("第三方 Provider 没有可用的 API Key。")
+
+    # The actor header is a compatibility hint, not a guarantee that a gateway
+    # offers account-bound tools such as image generation.
+    headers = {
+        str(key): str(value) for key, value in (selected.get("http_headers") or {}).items()
+        if str(key).casefold() != "x-openai-actor-authorization"
+    }
+    headers["x-openai-actor-authorization"] = "codex-desktop"
+    cleaned = _remove_embedded_provider_keys(
+        config_text, {"custom", TOKENDANCE_PROVIDER}, {"experimental_bearer_token"}
+    )
+    root, tables, order = _split_toml(cleaned)
+    table_header = next(
+        (header for header in order if header in (
+            f"[model_providers.{provider_id}]", f'[model_providers.{json.dumps(provider_id)}]'
+        )), None,
+    )
+    if table_header is None:
+        raise SwitchError(f"配置里没有 [model_providers.{provider_id}]。")
+    tables[table_header] = [
+        line for line in tables[table_header]
+        if _assignment_key(line) not in {"requires_openai_auth", "experimental_bearer_token", "http_headers"}
+    ]
+    tables[table_header].extend([
+        "requires_openai_auth = false",
+        f"experimental_bearer_token = {json.dumps(api_key.strip(), ensure_ascii=False)}",
+    ])
+    headers_table = f"[model_providers.{provider_id}.http_headers]"
+    quoted_headers_table = f'[model_providers.{json.dumps(provider_id)}.http_headers]'
+    existing_header = next((header for header in order if header in (headers_table, quoted_headers_table)), None)
+    header = existing_header or headers_table
+    tables[header] = [header] + [
+        f"{json.dumps(str(key), ensure_ascii=False)} = {json.dumps(str(value), ensure_ascii=False)}"
+        for key, value in headers.items()
+    ]
+    if existing_header is None:
+        order.append(header)
+    pieces = ["\n".join(root).strip()]
+    pieces.extend("\n".join(tables[item]).strip() for item in order)
+    result = "\n\n".join(piece for piece in pieces if piece) + "\n"
+    tomllib.loads(result)
+    return result
+
+
 def native_official_config(config_text: str) -> str:
     """Keep unrelated Codex preferences while restoring the built-in OpenAI provider."""
     try:
+        active_id = effective_model_provider(config_text)
+        config_text = _remove_embedded_provider_keys(
+            config_text, {"custom", TOKENDANCE_PROVIDER, active_id}, {"experimental_bearer_token"}
+        )
         root, tables, order = _split_toml(config_text)
         remove_root = {"model", "model_provider", "disable_response_storage"}
         root = [line for line in root if _assignment_key(line) not in remove_root]
@@ -572,8 +649,14 @@ def provider_name_from_config(config_text: str, fallback: str) -> str:
         return fallback
 
 
-def custom_provider_config(base_config: str, name: str, base_url: str, model: str) -> str:
+def custom_provider_config(base_config: str, name: str, base_url: str, model: str, api_key: str = "") -> str:
     q = lambda value: json.dumps(value, ensure_ascii=False)
+    if base_config.strip():
+        base_config = _remove_embedded_provider_keys(
+            base_config,
+            {"custom", TOKENDANCE_PROVIDER, effective_model_provider(base_config)},
+            {"experimental_bearer_token"},
+        )
     overlay = (
         'model_provider = "custom"\n'
         f"model = {q(model)}\n"
@@ -582,11 +665,12 @@ def custom_provider_config(base_config: str, name: str, base_url: str, model: st
         f"name = {q(name)}\n"
         f"base_url = {q(base_url)}\n"
         'wire_api = "responses"\n'
-        "requires_openai_auth = true\n"
+        "requires_openai_auth = false\n"
         "request_max_retries = 4\n"
         "stream_max_retries = 5\n"
     )
-    return merge_toml(base_config, overlay)
+    merged = merge_toml(base_config, overlay)
+    return third_party_compat_config(merged, api_key) if api_key else merged
 
 
 def tokendance_provider_config(base_config: str, model: str = TOKENDANCE_DEFAULT_MODEL, api_key: str = "") -> str:
@@ -612,6 +696,11 @@ def tokendance_provider_config(base_config: str, model: str = TOKENDANCE_DEFAULT
         f"\n[model_providers.{TOKENDANCE_PROVIDER}.http_headers]\n"
         f'X-App-URL = "{TOKENDANCE_APP_URL}"\n'
     )
+    base_config = _remove_embedded_provider_keys(
+        base_config,
+        {"custom", TOKENDANCE_PROVIDER, effective_model_provider(base_config)},
+        {"experimental_bearer_token"},
+    ) if base_config.strip() else base_config
     return merge_toml(base_config, overlay)
 
 
@@ -2795,13 +2884,19 @@ def fetch_provider_models(provider: Provider, timeout: int = 10) -> list[str]:
     if not isinstance(key, str) or not key.strip():
         raise SwitchError("第三方 Provider 缺少 API Key。")
     url = base_url.rstrip("/") + "/models"
+    configured = tomllib.loads(provider.config)["model_providers"][provider.model_provider]
+    static_headers = configured.get("http_headers") or {}
+    if not isinstance(static_headers, dict):
+        raise SwitchError("Provider http_headers 必须是请求头表。")
+    request_headers = {
+        str(name): str(value) for name, value in static_headers.items()
+        if str(name).casefold() not in {"authorization", "user-agent"}
+    }
+    request_headers.update({"Authorization": f"Bearer {key.strip()}", "User-Agent": "CodexShift/1"})
+    if provider.is_tokendance:
+        request_headers["X-App-URL"] = TOKENDANCE_APP_URL
     request = urllib.request.Request(
-        url,
-        headers={
-            "Authorization": f"Bearer {key.strip()}",
-            "User-Agent": "CodexShift/1",
-            **({"X-App-URL": "app://codexshift"} if provider.is_tokendance else {}),
-        },
+        url, headers=request_headers,
     )
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
@@ -3134,9 +3229,14 @@ class SwitchEngine:
             raise SwitchError("请先编辑内置 TokenDance 配置并填写 API Key。")
         needs_official_login = provider.id == BUILTIN_OFFICIAL_ID and provider.auth.get("auth_mode") != "chatgpt"
         auth = None if needs_official_login else normalize_auth(provider.auth, target)
-        tomllib.loads(provider.config)
+        config = provider.config
         if auth is not None and auth.get("auth_mode") != "chatgpt":
-            data = tomllib.loads(provider.config)
+            config = third_party_compat_config(config, str(auth.get("OPENAI_API_KEY") or ""))
+        else:
+            config = native_official_config(config)
+        tomllib.loads(config)
+        if auth is not None and auth.get("auth_mode") != "chatgpt":
+            data = tomllib.loads(config)
             selected = data.get("model_providers", {}).get(target)
             if not isinstance(selected, dict) or not selected.get("base_url"):
                 raise SwitchError(f"配置里没有 [model_providers.{target}] 或 base_url。")
@@ -3148,10 +3248,15 @@ class SwitchEngine:
                     raise SwitchError("TokenDance 配置中的授权 Key 不一致。")
                 if not isinstance(headers, dict) or headers.get("X-App-URL") != TOKENDANCE_APP_URL:
                     raise SwitchError("TokenDance 请求归因配置缺失。")
-            elif not selected.get("requires_openai_auth", False):
-                raise SwitchError("第三方 Provider 必须设置 requires_openai_auth = true 才能使用 auth.json 的 Key。")
+            if selected.get("requires_openai_auth") is not False:
+                raise SwitchError("第三方 Provider 兼容配置缺少 requires_openai_auth = false。")
+            if selected.get("experimental_bearer_token") != auth.get("OPENAI_API_KEY"):
+                raise SwitchError("第三方 Provider 兼容配置中的 API Key 不一致。")
+            headers = selected.get("http_headers")
+            if not isinstance(headers, dict) or headers.get("x-openai-actor-authorization") != "codex-desktop":
+                raise SwitchError("第三方 Provider 兼容请求头缺失。")
 
-        provider = Provider(provider.id, provider.name, provider.config, auth or {"auth_mode": "logged_out"}, provider.is_current, provider.source)
+        provider = Provider(provider.id, provider.name, config, auth or {"auth_mode": "logged_out"}, provider.is_current, provider.source)
         if verify:
             self.log(tr("validating"))
             self.log(probe_provider(provider))
@@ -3170,6 +3275,8 @@ class SwitchEngine:
             backup.save(self.codex_home / name)
         try:
             self.log(tr("writing_credentials"))
+            if auth is not None and auth.get("auth_mode") == "apikey":
+                self.log(tr("third_party_compat"))
             atomic_write(self.codex_home / "config.toml", provider.config.encode("utf-8"))
             if auth is None:
                 (self.codex_home / "auth.json").unlink(missing_ok=True)
@@ -3267,7 +3374,7 @@ class SwitchEngine:
         else:
             base_config = provider.config
             provider_id = provider.id
-        config = custom_provider_config(base_config, name, base_url, model)
+        config = custom_provider_config(base_config, name, base_url, model, api_key)
         auth = {"OPENAI_API_KEY": api_key, "auth_mode": "apikey"}
         result = Provider(provider_id, name, config, auth, source=tr("source_local"))
         vault = self.vault.load()
@@ -3510,16 +3617,10 @@ class NewProviderDialog(tk.Toplevel):
             raise SwitchError("Base URL 必须以 http:// 或 https:// 开头。")
         name = name or "待检测 Provider"
         model = model or "auto-detect"
-        q = lambda value: json.dumps(value, ensure_ascii=False)
         if self.provider is not None and self.provider.id == BUILTIN_TOKENDANCE_ID:
             config = tokendance_provider_config(self.provider.config, model, api_key)
             return Provider(BUILTIN_TOKENDANCE_ID, name, config, {"OPENAI_API_KEY": api_key, "auth_mode": "apikey"}, source=tr("source_builtin_tokendance"))
-        config = (
-            f"model_provider = \"custom\"\nmodel = {q(model)}\n"
-            "[model_providers.custom]\n"
-            f"name = {q(name)}\nbase_url = {q(base_url.rstrip('/'))}\n"
-            "wire_api = \"responses\"\nrequires_openai_auth = true\n"
-        )
+        config = custom_provider_config("", name, base_url.rstrip("/"), model, api_key)
         return Provider("temporary", name, config, {"OPENAI_API_KEY": api_key, "auth_mode": "apikey"}, source="待保存")
 
     def _set_detecting(self, detecting: bool) -> None:

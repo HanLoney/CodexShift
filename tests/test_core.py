@@ -107,6 +107,16 @@ class CoreTests(unittest.TestCase):
         self.assertNotIn('[model_providers.openai]', restored)
         self.assertIn('[features]', restored)
 
+    def test_native_official_config_removes_nonstandard_active_bearer(self):
+        config = (
+            'model_provider = "external"\n'
+            '[model_providers.external]\nbase_url = "https://example.test/v1"\n'
+            'experimental_bearer_token = "do-not-keep"\n'
+        )
+        restored = native_official_config(config)
+        self.assertNotIn("do-not-keep", restored)
+        self.assertEqual(codex_switcher.effective_model_provider(restored), "openai")
+
     def test_builtin_official_provider_is_always_available(self):
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp)
@@ -162,6 +172,63 @@ class CoreTests(unittest.TestCase):
     def test_custom_auth_is_normalized(self):
         result = normalize_auth({"OPENAI_API_KEY": " secret ", "tokens": {"access_token": "old"}}, "custom")
         self.assertEqual(result, {"OPENAI_API_KEY": "secret", "auth_mode": "apikey"})
+
+    def test_third_party_compat_keeps_existing_headers_and_settings(self):
+        old = (
+            'model_provider = "custom"\nmodel = "model-x"\n'
+            '[model_providers.custom]\nname = "Example"\nbase_url = "https://example.test/v1"\n'
+            'wire_api = "responses"\nrequires_openai_auth = true\n'
+            '[model_providers.custom.http_headers]\nX-Custom = "keep"\n'
+            'X-OpenAI-Actor-Authorization = "old"\n'
+            '[features]\napps = true\n'
+        )
+        result = codex_switcher.third_party_compat_config(old, "new-key")
+        data = codex_switcher.tomllib.loads(result)
+        selected = data["model_providers"]["custom"]
+        self.assertIs(selected["requires_openai_auth"], False)
+        self.assertEqual(selected["experimental_bearer_token"], "new-key")
+        self.assertEqual(selected["http_headers"]["X-Custom"], "keep")
+        self.assertEqual(selected["http_headers"]["x-openai-actor-authorization"], "codex-desktop")
+        self.assertNotIn("X-OpenAI-Actor-Authorization", selected["http_headers"])
+        self.assertTrue(data["features"]["apps"])
+
+    def test_tokendance_compat_keeps_app_attribution(self):
+        config = codex_switcher.tokendance_provider_config("", "model-x", "key-x")
+        prepared = codex_switcher.third_party_compat_config(config, "key-x")
+        selected = codex_switcher.tomllib.loads(prepared)["model_providers"]["tokendance"]
+        self.assertEqual(selected["http_headers"]["X-App-URL"], "app://codexshift")
+        self.assertEqual(selected["http_headers"]["x-openai-actor-authorization"], "codex-desktop")
+        self.assertIs(selected["requires_openai_auth"], False)
+        self.assertEqual(selected["experimental_bearer_token"], "key-x")
+
+    def test_switch_upgrades_old_custom_profile_and_official_removes_bearer(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            engine = SwitchEngine(home, lambda _message: None)
+            engine.vault = DpapiVault(home / "profiles.dpapi")
+            engine.state_path = home / "settings.json"
+            legacy = Provider(
+                "legacy", "Legacy",
+                'model_provider = "custom"\nmodel = "old-model"\n'
+                '[model_providers.custom]\nname = "Legacy"\n'
+                'base_url = "https://legacy.test/v1"\nwire_api = "responses"\n'
+                'requires_openai_auth = true\n',
+                {"OPENAI_API_KEY": "legacy-key", "auth_mode": "apikey"},
+            )
+            stats = {"rollouts": 0, "changed": 0, "updated": 0, "inserted": 0}
+            with mock.patch.object(codex_switcher, "running_codex_processes", return_value=[]), \
+                 mock.patch.object(codex_switcher, "sync_history", return_value=stats):
+                engine.switch(legacy, verify=False, close=False, restart=False)
+                active = codex_switcher.tomllib.loads((home / "config.toml").read_text(encoding="utf-8"))
+                self.assertIs(active["model_providers"]["custom"]["requires_openai_auth"], False)
+                self.assertEqual(active["model_providers"]["custom"]["experimental_bearer_token"], "legacy-key")
+                self.assertEqual(active["model_providers"]["custom"]["http_headers"]["x-openai-actor-authorization"], "codex-desktop")
+                official = engine.providers()[0]
+                engine.switch(official, verify=False, close=False, restart=False)
+            restored = (home / "config.toml").read_text(encoding="utf-8")
+            self.assertEqual(codex_switcher.effective_model_provider(restored), "openai")
+            self.assertNotIn("legacy-key", restored)
+            self.assertFalse((home / "auth.json").exists())
 
     def test_check_option_uses_tick_not_x(self):
         root = tk.Tk()
@@ -281,7 +348,9 @@ class CoreTests(unittest.TestCase):
     def test_model_discovery_parses_openai_compatible_response(self):
         class Handler(BaseHTTPRequestHandler):
             def do_GET(self):
-                if self.path != "/v1/models" or self.headers.get("Authorization") != "Bearer key-1":
+                if (self.path != "/v1/models"
+                        or self.headers.get("Authorization") != "Bearer key-1"
+                        or self.headers.get("x-openai-actor-authorization") != "codex-desktop"):
                     self.send_response(401)
                     self.end_headers()
                     return
@@ -300,10 +369,8 @@ class CoreTests(unittest.TestCase):
         thread.start()
         try:
             port = server.server_address[1]
-            config = (
-                'model_provider = "custom"\nmodel = "model-a"\n'
-                '[model_providers.custom]\n'
-                f'base_url = "http://127.0.0.1:{port}/v1"\n'
+            config = codex_switcher.custom_provider_config(
+                "", "Test", f"http://127.0.0.1:{port}/v1", "model-a", "key-1"
             )
             provider = Provider("test", "Test", config, {"OPENAI_API_KEY": "key-1"})
             self.assertEqual(fetch_provider_models(provider), ["model-a", "model-b"])

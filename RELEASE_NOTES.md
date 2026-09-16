@@ -1,36 +1,20 @@
-# CodexShift 1.8.1
+# CodexShift 1.9.1
 
-本版本修复 Provider 列表重复配置与官方入口显示问题，并延续 Codex 与 DeepSeek Harness 的双向项目/会话迁移能力。
+本版在 Provider 切换与 Codex 历史任务索引维护的基础上，加入第三方 API 的 Codex Desktop 兼容配置。切换旧配置时也会自动更新；切回原生官方账号时会清除当前配置中嵌入的第三方 Key。
 
-## 主要功能
+## 更新
 
-- 按项目与独立会话分区浏览，可普通点击累积多选
-- Codex ↔ DeepSeek Harness 双向选择性迁移
-- Codex → DSH 将用户/助手消息逐条恢复为原生会话，不再拼成单条 Markdown
-- 原生历史写入不会触发模型回答，也不会产生额外 API 用量
-- 自动发现 DeepSeek Harness 动态端口与桌面运行时
-- 修复包含特殊字符、颜文字时的 Windows GBK 导入超时
-- 导入前后校验、失败清理及本地 localhost 限制
-- 修复 DSH → Codex 提示成功但会话不可见：现在会同步写入 Codex 项目归属和原生来源
-- “修复历史索引”可自动找回旧版本已导入但未显示的 DSH 会话
-- 修复当前 Codex Desktop 打开导入会话时提示 `does not start with session metadata` 的问题
-- 修复项目和会话已显示、但打开后聊天内容为空的问题
-- 修复历史索引时优先从原 DSH 会话重建可见对话，并过滤运行时上下文与系统提醒
-- 从 DSH 导入 Codex 时自动关闭 Codex，导入完成后自动重新启动；失败回滚后也会恢复启动
-- 导入过程改为后台执行，并显示百分比、当前会话、运行阶段和可滚动的实时日志
-- 预览、导入和取消按钮固定显示，在较小屏幕或窗口高度下也不会被进度区挤出界面
-- 仅导入项目时不再生成占位会话
-- 继续支持 Provider 切换、API 检测和 Codex 历史任务索引修复
-- 修复当前 Codex 模型变化时反复生成多个 `custom` 自动配置的问题
-- 当前 API 会更新匹配的用户配置，不再重复创建快照
-- 保留用户自己设置的 Provider 名称，不再被 TOML 中的 `custom` 覆盖
-- Provider 列表增加滚动条，切回官方后官方账号入口不会被隐藏
+- 第三方 Provider 自动设置 `requires_openai_auth = false` 与 `x-openai-actor-authorization = codex-desktop`，并使用所选配置的 API Key。
+- 保留自定义请求头和 TokenDance 的 `X-App-URL: app://codexshift` 归因；内置 TokenDance 一键授权仍可使用。
+- 切换时继续同步历史任务的 Provider 引用、修复索引，并在修改前备份、失败时回滚。
+
+兼容请求头并不能保证第三方网关支持所有 Codex 工具，尤其是依赖官方账号或模型能力的功能。启用后当前 API Key 也会以明文写入 Codex 的 `config.toml`，请保护该文件及备份；CodexShift 保存的 Provider 凭据仍使用系统密钥服务加密。
 
 ## 下载
 
-- Windows：`CodexShift-v1.8.1-Windows-x64.exe`
-- macOS：`CodexShift-v1.8.1-macOS-Universal.zip`
+- Windows：`CodexShift-v1.9.1-Windows-x64.exe`
+- macOS：`CodexShift-v1.9.1-macOS-Universal.zip`
 
-Windows 和 macOS 应用当前均未使用商业开发者证书签名，首次启动时系统可能显示安全提示。请只从本仓库的 Releases 页面下载。
+Windows 与 macOS 应用均未使用商业开发者证书签名，请仅从本仓库 Releases 下载。
 
 > CodexShift 是独立社区项目，不是 OpenAI 官方产品，与 OpenAI 没有隶属或背书关系。

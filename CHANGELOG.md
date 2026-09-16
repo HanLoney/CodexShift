@@ -2,6 +2,12 @@
 
 All notable changes to CodexShift are documented here.
 
+## 1.9.1
+
+- Third-party Provider switches now apply the Codex desktop compatibility header and disable OpenAI auth for that Provider while supplying its own API Key.
+- Existing saved profiles using `requires_openai_auth = true` are upgraded when switched; switching back to the native account clears the active embedded bearer token.
+- Preserve other static Provider headers, validate the generated TOML, and document that account-gated tools are not guaranteed by this setting.
+
 ## 1.9.0
 
 - Added TokenDance as a built-in preferred third-party Provider using the Responses gateway.

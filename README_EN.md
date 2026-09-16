@@ -51,6 +51,7 @@ Beyond Provider switching and historical index repair, CodexShift can move accum
 - Create, edit, and delete third-party API profiles.
 - Test API connectivity and credentials, and discover models from OpenAI-compatible `/models` endpoints.
 - Switch configuration and authentication data while removing conflicting account fields.
+- Apply third-party compatibility settings during a switch: `requires_openai_auth = false`, an `x-openai-actor-authorization: codex-desktop` request header, and the selected API Key. Switching back to the native account removes the active third-party Key from Codex configuration. Account-gated tools such as image generation are not guaranteed; availability still depends on Codex and the provider.
 - Automatically detect `CODEX_HOME` / `~/.codex`, with an editable path setting.
 - **Historical task index synchronization (the core feature):** scan rollout files, normalize their `model_provider` values, update `state_5.sqlite`, and restore missing root task indexes so historical sessions remain visible and openable after a switch.
 - Repair historical indexes independently, without changing the active Provider.
@@ -66,8 +67,8 @@ Download the appropriate file from [Releases](https://github.com/HanLoney/CodexS
 
 | Platform | File |
 | --- | --- |
-| Windows 10/11 x64 | `CodexShift-v1.9.0-Windows-x64.exe` |
-| macOS | `CodexShift-v1.9.0-macOS-Universal.zip` |
+| Windows 10/11 x64 | `CodexShift-v1.9.1-Windows-x64.exe` |
+| macOS | `CodexShift-v1.9.1-macOS-Universal.zip` |
 
 Open CodexShift, verify the detected Codex Home, choose or create a Provider, optionally test its API, then click the switch button. CodexShift backs up the data and synchronizes historical task indexes as part of the switch. Codex must close during the operation. Backups are stored in `~/.codex/switcher_backups`.
 
@@ -105,6 +106,7 @@ Use `build.ps1` on Windows or `build_macos.sh` on macOS to create a packaged app
 - Full secrets are not printed in application logs.
 - Changes are backed up before being written and rolled back on failure.
 - Never share or commit Codex's `auth.json` file.
+- Compatibility mode writes the active API Key to Codex's `config.toml` as `experimental_bearer_token`. Stored CodexShift profiles remain DPAPI / Keychain-protected. Never share or commit `config.toml`, `auth.json`, or backup directories.
 - See [SECURITY.md](SECURITY.md) for reporting instructions.
 
 ## License

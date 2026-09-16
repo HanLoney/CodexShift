@@ -8,4 +8,4 @@ Report security concerns through GitHub's private vulnerability reporting featur
 
 ## Credential handling
 
-CodexShift stores Provider snapshots locally. Secrets are protected with Windows DPAPI or macOS Keychain. Codex's own `auth.json` remains sensitive and should never be shared or committed.
+CodexShift stores Provider snapshots locally. Saved profiles are protected with Windows DPAPI or macOS Keychain. While a third-party Provider is active, Codex's `config.toml` contains its API Key in `experimental_bearer_token` so Codex can authenticate without OpenAI login. `auth.json`, `config.toml`, and switch backups are sensitive and should never be shared or committed. Switching to the native account removes the active third-party bearer token from `config.toml`.

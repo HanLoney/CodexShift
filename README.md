@@ -59,6 +59,7 @@ CodexShift 的核心流程是：
 - **第三方 API 配置管理**：支持新建、编辑和删除配置，并在多套 Provider 之间快速切换。
 - **API 与模型检测**：验证 API Key、接口连通性和 Responses 协议兼容性，并通过 OpenAI 兼容的 `/models` 接口自动发现可用模型。
 - **配置与凭据同步**：切换时同时更新 Codex 配置和认证信息，自动移除互相冲突的官方账号或 API Key 字段。
+- **第三方兼容配置同步**：切换到第三方 API 时，在当前 Provider 下设置 `requires_openai_auth = false`，加入 `x-openai-actor-authorization: codex-desktop` 请求头，并配置该 API Key；切回官方账号时移除活动配置中的第三方 Key。此配置不保证账号限定工具（如生图）一定可用，仍取决于 Codex 与服务端能力。
 - **Codex Home 路径管理**：自动识别当前用户的 `CODEX_HOME` / `~/.codex`，也支持手动指定其他目录。
 - **历史任务索引同步（核心特性）**：扫描 rollout 历史文件，统一 `model_provider` 引用，更新 `state_5.sqlite`，并补齐遗漏的根任务索引，让旧会话在切换后继续可见、可打开。
 - **独立修复历史索引**：无需切换 Provider，也可以单独扫描并重建历史任务索引。
@@ -74,8 +75,8 @@ CodexShift 的核心流程是：
 
 | 系统 | 文件 |
 | --- | --- |
-| Windows 10/11 x64 | `CodexShift-v1.9.0-Windows-x64.exe` |
-| macOS | `CodexShift-v1.9.0-macOS-Universal.zip` |
+| Windows 10/11 x64 | `CodexShift-v1.9.1-Windows-x64.exe` |
+| macOS | `CodexShift-v1.9.1-macOS-Universal.zip` |
 
 1. 打开 CodexShift，确认顶部显示的 Codex Home 路径正确。
 2. 选择内置官方账号，或新建一个第三方 API 配置。
@@ -147,6 +148,7 @@ chmod +x build_macos.sh
 - 不会在日志中输出完整密钥或令牌。
 - 所有修改都在本机完成，并在写入前创建备份。
 - `auth.json` 本身包含敏感凭据，请勿分享或提交到仓库。
+- 第三方兼容模式需要把当前 API Key 写入 Codex 的 `config.toml`（`experimental_bearer_token`）；CodexShift 中保存的配置仍由 DPAPI / Keychain 保护。请勿分享或提交 `config.toml`、`auth.json` 和备份目录。
 - 安全问题请参阅 [SECURITY.md](SECURITY.md)。
 
 ## 许可证
